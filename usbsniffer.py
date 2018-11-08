@@ -240,15 +240,17 @@ class USBSnifferSoC(SoCSDRAM):
 
         # leds
         led0 = platform.request("rgb_led", 0)
+        self.comb += [
+            led0.r.eq(~self.cpu.packet.tx.source.valid),
+            led0.g.eq(~self.cpu.packet.rx.sink.valid),
+            led0.b.eq(~self.sender.packer.source.valid),
+        ]
+
         led1 = platform.request("rgb_led", 1)
         self.comb += [
-            led0.r.eq(0),
-            led0.g.eq(1),
-            led0.b.eq(1),
-
-            led1.r.eq(1),
-            led1.g.eq(1),
-            led1.b.eq(0),
+            led1.r.eq(~0),
+            led1.g.eq(~0),
+            led1.b.eq(~0),
         ]
 
         # timing constraints
