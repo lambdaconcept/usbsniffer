@@ -9,6 +9,7 @@ from litex.build.xilinx import XilinxPlatform
 from litex.soc.interconnect.csr import *
 from litex.soc.integration.soc_sdram import *
 from litex.soc.integration.builder import *
+from litex.soc.integration.cpu_interface import get_csr_header
 from litex.soc.interconnect import stream
 from litex.soc.cores.uart import UARTWishboneBridge, RS232PHY
 
@@ -265,6 +266,12 @@ class USBSnifferSoC(SoCSDRAM):
         if hasattr(self, "analyzer"):
             self.analyzer.export_csv(vns, "test/analyzer.csv")
 
+    def generate_software_header(self):
+        csr_header = get_csr_header(self.get_csr_regions(),
+                                    self.get_constants(),
+                                    with_access_functions=True)
+        tools.write_to_file(os.path.join("software/csr.h"), csr_header)
+
 
 def main():
     platform = Platform()
@@ -272,6 +279,7 @@ def main():
     builder = Builder(soc, output_dir="build", csr_csv="test/csr.csv")
     vns = builder.build()
     soc.do_exit(vns)
+    soc.generate_software_header()
 
 
 if __name__ == "__main__":
