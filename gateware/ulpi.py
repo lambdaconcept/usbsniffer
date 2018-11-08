@@ -140,6 +140,8 @@ class ULPISplitter(Module, AutoCSR):
                             self.source.last.eq(1),
                             self.source.data.eq(prevdata),
                             prevdataset.eq(0)
+                        ).Else(
+                            self.source.valid.eq(0),
                         )
                     ).Else(
                         self.source.valid.eq(0),
