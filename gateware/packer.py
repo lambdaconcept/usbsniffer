@@ -7,11 +7,11 @@ from gateware.usb import user_description as usb_description
 
 class LenTimeSender(Module):
     def __init__(self, usb_core, identifier, depth=256):
-        self.submodules.sender = sender = LenTimePacker(identifier, depth=depth)
-        self.sink = sender.sink
+        self.submodules.packer = packer = LenTimePacker(identifier, depth=depth)
+        self.sink = packer.sink
         usb_port = usb_core.crossbar.get_port(identifier)
         self.comb += [
-            sender.source.connect(usb_port.sink),
+            packer.source.connect(usb_port.sink),
         ]
 
 class LenTimePacker(Module):
