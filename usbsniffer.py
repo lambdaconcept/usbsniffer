@@ -129,6 +129,7 @@ class _CRG(Module, AutoCSR):
 
         # usb clock domain (100MHz from usb)
         self.comb += self.cd_usb.clk.eq(platform.request("usb_fifo_clock"))
+        self.comb += self.cd_usb.rst.eq(self.cd_sys.rst)
 
         # ulpi clock domain (60MHz from ulpi)
         self.comb += self.cd_ulpi.clk.eq(platform.request("ulpi_clock"))
