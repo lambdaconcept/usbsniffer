@@ -21,6 +21,7 @@ from gateware.etherbone import Etherbone
 from gateware.ft601 import FT601Sync
 from gateware.ulpi import ULPIPHY, ULPICore
 from gateware.packer import LenTimeSender
+from gateware.dramfifo import LiteDRAMFIFO
 
 from litescope import LiteScopeAnalyzer
 
@@ -233,10 +234,15 @@ class USBSnifferSoC(SoCSDRAM):
         self.add_cpu(Etherbone(self.usb_core, self.usb_map["wishbone"]))
         self.add_wb_master(self.cpu.master.bus)
 
+        # dram fifo
+        depth = 128 * 1024 * 1024
+        self.submodules.fifo = LiteDRAMFIFO([("data", 8)], depth, 0, self.sdram.crossbar)
+
         # usb <--> ulpi
-        self.submodules.sender = LenTimeSender(self.usb_core, self.usb_map["ulpi"], depth=2048)
+        self.submodules.sender = LenTimeSender(self.usb_core, self.usb_map["ulpi"], depth=256)
         self.comb += [
-            self.ulpi_core.source.connect(self.sender.sink),
+            self.ulpi_core.source.connect(self.fifo.sink),
+            self.fifo.source.connect(self.sender.sink),
         ]
 
         # leds

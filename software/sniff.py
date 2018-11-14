@@ -1,6 +1,38 @@
 import time
 
+from sdram_init import *
+
 from etherbone import Etherbone, USBMux
+
+def sdram_configure(wb):
+    # software control
+    wb.regs.sdram_dfii_control.write(0)
+
+    # sdram initialization
+    for i, (comment, a, ba, cmd, delay) in enumerate(init_sequence):
+        print(comment)
+        wb.regs.sdram_dfii_pi0_address.write(a)
+        wb.regs.sdram_dfii_pi0_baddress.write(ba)
+        if i < 2:
+            wb.regs.sdram_dfii_control.write(cmd)
+        else:
+            wb.regs.sdram_dfii_pi0_command.write(cmd)
+            wb.regs.sdram_dfii_pi0_command_issue.write(1)
+
+    # hardware control
+    wb.regs.sdram_dfii_control.write(dfii_control_sel)
+
+    # configure bitslip and delay
+    bitslip = 1
+    delay = 18
+    for module in range(2):
+        wb.regs.ddrphy_dly_sel.write(1<<module)
+        wb.regs.ddrphy_rdly_dq_rst.write(1)
+        wb.regs.ddrphy_rdly_dq_bitslip_rst.write(1)
+        for i in range(bitslip):
+            wb.regs.ddrphy_rdly_dq_bitslip.write(1)
+        for i in range(delay):
+            wb.regs.ddrphy_rdly_dq_inc.write(1)
 
 def ulpi_read_reg(eb, reg):
     eb.regs.ulpi_core_reg_adr.write(reg)
@@ -27,6 +59,9 @@ def ulpi_dump(eb):
         ulpi_read_reg(eb, i)
 
 def ulpi_init(eb):
+    ulpi_reset(eb, 1)
+    time.sleep(0.5)
+
     ulpi_reset(eb, 0)
     time.sleep(0.1)
 
@@ -46,6 +81,8 @@ if __name__ == '__main__':
     eb = Etherbone(usbmux, STREAMID_WISHBONE,
                           csr_csv="test/csr.csv", csr_data_width=8, debug=False)
 
+    sdram_configure(eb)
+
     print("Testing SRAM write/read:")
     for i in range(32):
         eb.write(eb.mems.sram.base + 4*i, i)
@@ -63,4 +100,4 @@ if __name__ == '__main__':
     print("Waiting for ULPI data:")
     while True:
         data = usbmux.recv(STREAMID_ULPI)
-        print(data.hex())
+        # print(data.hex())
