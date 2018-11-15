@@ -3,6 +3,12 @@ from migen import *
 from litex.soc.interconnect.csr import *
 from litex.soc.interconnect import stream
 
+def ulpi_description(dw):
+    payload_layout = [
+        ("data", dw),
+    ]
+    return stream.EndpointDescription(payload_layout)
+
 class ULPIPHY(Module, AutoCSR):
     def __init__(self, pads):
         self.submodules.ulpi_phy = ClockDomainsRenamer("ulpi")(ULPIPHYS7(pads))

@@ -20,7 +20,7 @@ from gateware.usb import USBCore
 from gateware.etherbone import Etherbone
 from gateware.ft601 import FT601Sync
 from gateware.ulpi import ULPIPHY, ULPICore
-from gateware.packer import LenTimeSender
+from gateware.newpacker import LTCore, LTPacker
 from gateware.dramfifo import LiteDRAMFIFO
 
 from litescope import LiteScopeAnalyzer
@@ -239,25 +239,27 @@ class USBSnifferSoC(SoCSDRAM):
         self.submodules.fifo = LiteDRAMFIFO([("data", 8)], depth, 0, self.sdram.crossbar)
 
         # usb <--> ulpi
-        self.submodules.sender = LenTimeSender(self.usb_core, self.usb_map["ulpi"], depth=256)
+        self.submodules.ltpacker = LTPacker()
+        self.submodules.ltcore = LTCore(self.usb_core, self.usb_map["ulpi"])
         self.comb += [
             self.ulpi_core.source.connect(self.fifo.sink),
-            self.fifo.source.connect(self.sender.sink),
+            self.fifo.source.connect(self.ltpacker.sink),
+            self.ltpacker.source.connect(self.ltcore.sender.sink),
         ]
 
         # leds
         led0 = platform.request("rgb_led", 0)
         self.comb += [
             led0.r.eq(~self.cpu.packet.tx.source.valid),
-            led0.g.eq(~self.cpu.packet.rx.sink.valid),
-            led0.b.eq(~self.sender.packer.source.valid),
+            led0.g.eq(~0),
+            led0.b.eq(~self.cpu.packet.rx.sink.valid),
         ]
 
         led1 = platform.request("rgb_led", 1)
         self.comb += [
-            led1.r.eq(~0),
+            led1.r.eq(~self.ulpi_core.source.valid),
             led1.g.eq(~0),
-            led1.b.eq(~0),
+            led1.b.eq(~self.ltcore.sender.source.valid),
         ]
 
         # timing constraints
