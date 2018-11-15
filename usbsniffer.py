@@ -20,7 +20,7 @@ from gateware.usb import USBCore
 from gateware.etherbone import Etherbone
 from gateware.ft601 import FT601Sync
 from gateware.ulpi import ULPIPHY, ULPICore
-from gateware.newpacker import LTCore, LTPacker
+from gateware.packer import LTCore, LTPacker
 from gateware.dramfifo import LiteDRAMFIFO
 
 from litescope import LiteScopeAnalyzer
