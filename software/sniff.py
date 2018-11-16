@@ -76,6 +76,13 @@ def ulpi_init(eb):
 STREAMID_WISHBONE = 0
 STREAMID_ULPI = 1
 
+def lt_unpack(eb, data):
+    print(data.hex())
+    length = int.from_bytes(data[0:4], "little")
+    ts = int.from_bytes(data[4:12], "little")
+    payload = data[12:12+length]
+    print("({}, {}): {}".format(ts, length, payload.hex()))
+
 if __name__ == '__main__':
     usbmux = USBMux("/dev/ft60x0")
     eb = Etherbone(usbmux, STREAMID_WISHBONE,
@@ -100,4 +107,4 @@ if __name__ == '__main__':
     print("Waiting for ULPI data:")
     while True:
         data = usbmux.recv(STREAMID_ULPI)
-        # print(data.hex())
+        lt_unpack(eb, data)

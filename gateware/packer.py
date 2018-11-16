@@ -15,7 +15,9 @@ def lt_description(dw):
 
 class TimeStamp(Module):
     def __init__(self):
-        self.o = Signal(32)
+        self.o = Signal(64)
+
+        # # #
 
         self.sync += [
             self.o.eq(self.o + 1),
@@ -39,8 +41,9 @@ class LTSender(Module):
         # # #
 
         # Description sink
-        #   Length:     32 bits
-        #   Timestamp:  32 bits
+        #   Length:      32 bits
+        #   Timestamp L: 32 bits
+        #   Timestamp H: 32 bits
         #   Data
 
         update = Signal()
@@ -49,8 +52,9 @@ class LTSender(Module):
         self.comb += [
             # align to next dword (mask +4)
             # +4 for header: length
-            # +4 for header: timestamp
-            newlength.eq(((sink.data-1) & 0xfffffffc) + 4 + 4 + 4)
+            # +4 for header: timestamp l
+            # +4 for header: timestamp h
+            newlength.eq(((sink.data-1) & 0xfffffffc) + 4 + 4 + 4 + 4)
         ]
 
         self.sync += [
@@ -85,13 +89,15 @@ class LTPacker(Module):
         # # #
 
         # Description source
-        #   Length:     32 bits
-        #   Timestamp:  32 bits
+        #   Length:      32 bits
+        #   Timestamp L: 32 bits
+        #   Timestamp H: 32 bits
         #   Data
 
         counter = Signal(max=depth)
 
         self.submodules.ts = TimeStamp()
+        tscopy = Signal.like(self.ts.o)
 
         fifo_data = stream.SyncFIFO(ulpi_description(8), depth)
         fifo_len = stream.SyncFIFO([("length", len(counter)+1)], depth)
@@ -137,14 +143,24 @@ class LTPacker(Module):
 
                 If(source.ready,
                     fifo_len.source.ready.eq(1),
-                    NextState("TIMESTAMP"),
+                    NextValue(tscopy, self.ts.o),
+                    NextState("TIMESTAMP_L"),
                 ),
             )
         )
 
-        fsm.act("TIMESTAMP",
+        fsm.act("TIMESTAMP_L",
             source.valid.eq(1),
-            source.data.eq(self.ts.o),
+            source.data.eq(tscopy[0:32]),
+
+            If(source.ready,
+                NextState("TIMESTAMP_H"),
+            ),
+        )
+
+        fsm.act("TIMESTAMP_H",
+            source.valid.eq(1),
+            source.data.eq(tscopy[32:64]),
 
             If(source.ready,
                 NextState("DATA"),
