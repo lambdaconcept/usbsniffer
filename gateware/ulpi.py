@@ -113,6 +113,60 @@ class ULPIPHYS7(Module, AutoCSR):
             rx_fifo.sink.valid.eq(odir & pads.dir)
         ]
 
+class ULPIFilter(Module, AutoCSR):
+    Reserved = 0x0001
+    OUT      = 0x0002
+    ACK      = 0x0004
+    DATA0    = 0x0008
+    PING     = 0x0010
+    SOF      = 0x0020
+    NYET     = 0x0040
+    DATA2    = 0x0080
+    SPLIT    = 0x0100
+    IN       = 0x0200
+    NAK      = 0x0400
+    DATA1    = 0x0800
+    PRE_ERR  = 0x1000
+    SETUP    = 0x2000
+    STALL    = 0x4000
+    MDATA    = 0x8000
+
+    def __init__(self):
+        self.sink = sink = stream.Endpoint(ulpi_description(8))
+        self.source = source = stream.Endpoint(ulpi_description(8))
+
+        self.mask = CSRStorage(16)
+
+        # # #
+
+        want = Signal()
+        cases = {}
+        for i in range(len(self.mask.storage)):
+            cases[i] = want.eq(~self.mask.storage[i])
+        self.comb += [
+            Case(sink.data[0:4], cases),
+        ]
+
+        keep = Signal()
+        first = Signal(reset=1)
+
+        self.comb += [
+            If((first & want) | (~first & keep),
+                sink.connect(source),
+            ).Else(
+                sink.ready.eq(1), # drop
+            ),
+        ]
+
+        self.sync += [
+            If(sink.valid,
+                first.eq(sink.last),
+                If(first,
+                    keep.eq(want),
+                ),
+            ),
+        ]
+
 class ULPISplitter(Module, AutoCSR):
     def __init__(self):
         self.sink = stream.Endpoint([('data', 8), ('cmd', 1)])

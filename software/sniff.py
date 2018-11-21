@@ -3,6 +3,7 @@ import time
 from sdram_init import *
 
 from etherbone import Etherbone, USBMux
+from gateware.ulpi import ULPIFilter
 
 def sdram_configure(wb):
     # software control
@@ -101,6 +102,7 @@ if __name__ == '__main__':
     print("\nSoC identifier: " + identifier)
 
     eb.regs.ulpi_core_splitter_delimiter.write(0x48) # delimiter
+    eb.regs.ulpi_filter_mask.write(ULPIFilter.SOF)
 
     ulpi_init(eb)
 

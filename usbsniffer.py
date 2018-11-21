@@ -20,7 +20,7 @@ from litedram.phy import a7ddrphy
 from gateware.usb import USBCore
 from gateware.etherbone import Etherbone
 from gateware.ft601 import FT601Sync
-from gateware.ulpi import ULPIPHY, ULPICore
+from gateware.ulpi import ULPIPHY, ULPICore, ULPIFilter
 from gateware.packer import LTCore, LTPacker
 from gateware.dramfifo import LiteDRAMFIFO
 
@@ -194,7 +194,8 @@ class USBSnifferSoC(SoCSDRAM):
         "ddrphy":      16,
         "ulpi_phy":    17,
         "ulpi_core":   18,
-        "analyzer":    19
+        "ulpi_filter": 19,
+        "analyzer":    20
     }
     csr_map.update(SoCSDRAM.csr_map)
 
@@ -225,6 +226,7 @@ class USBSnifferSoC(SoCSDRAM):
         # ulpi
         self.submodules.ulpi_phy = ULPIPHY(platform.request("ulpi"))
         self.submodules.ulpi_core = ULPICore(self.ulpi_phy)
+        self.submodules.ulpi_filter = ULPIFilter()
 
         # usb core
         usb_pads = platform.request("usb_fifo")
@@ -243,7 +245,8 @@ class USBSnifferSoC(SoCSDRAM):
         self.submodules.ltpacker = LTPacker()
         self.submodules.ltcore = LTCore(self.usb_core, self.usb_map["ulpi"])
         self.comb += [
-            self.ulpi_core.source.connect(self.fifo.sink),
+            self.ulpi_core.source.connect(self.ulpi_filter.sink),
+            self.ulpi_filter.source.connect(self.fifo.sink),
             self.fifo.source.connect(self.ltpacker.sink),
             self.ltpacker.source.connect(self.ltcore.sender.sink),
         ]
