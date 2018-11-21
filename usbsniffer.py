@@ -13,6 +13,7 @@ from litex.soc.integration.cpu_interface import get_csr_header
 from litex.soc.interconnect import stream
 from litex.soc.cores.uart import UARTWishboneBridge, RS232PHY
 
+from litedram import sdram_init
 from litedram.modules import MT41K256M16
 from litedram.phy import a7ddrphy
 
@@ -282,6 +283,11 @@ class USBSnifferSoC(SoCSDRAM):
                                     self.get_constants(),
                                     with_access_functions=True)
         tools.write_to_file(os.path.join("software/csr.h"), csr_header)
+
+        phy_header = sdram_init.get_sdram_phy_c_header(
+                         self.sdram.controller.settings.phy,
+                         self.sdram.controller.settings.timing)
+        tools.write_to_file(os.path.join("software/sdram_phy.h"), phy_header)
 
 
 def main():
