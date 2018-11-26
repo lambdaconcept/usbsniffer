@@ -169,8 +169,8 @@ class ULPIFilter(Module, AutoCSR):
 
 class ULPISplitter(Module, AutoCSR):
     def __init__(self):
-        self.sink = stream.Endpoint([('data', 8), ('cmd', 1)])
-        self.source = stream.Endpoint([('data', 8)])
+        self.sink = sink = stream.Endpoint([('data', 8), ('cmd', 1)])
+        self.source = source = stream.Endpoint([('data', 8)])
 
         self.delimiter = CSRStorage(8, reset=0x48)
 
@@ -180,35 +180,35 @@ class ULPISplitter(Module, AutoCSR):
         prevdataset = Signal()
 
         self.comb += [
-            self.sink.ready.eq(self.sink.valid),
+            sink.ready.eq(sink.valid),
         ]
 
         self.sync += [
-            If(self.sink.valid,
-                If(~self.sink.cmd,
+            If(sink.valid,
+                If(~sink.cmd,
                     If(prevdataset,
-                        self.source.valid.eq(1),
-                        self.source.data.eq(prevdata),
-                        self.source.last.eq(0)
+                        source.valid.eq(1),
+                        source.data.eq(prevdata),
+                        source.last.eq(0)
                     ),
-                    prevdata.eq(self.sink.data),
+                    prevdata.eq(sink.data),
                     prevdataset.eq(1)
                 ).Else(
-                    If(self.sink.data == self.delimiter.storage,
+                    If(sink.data == self.delimiter.storage,
                         If(prevdataset,
-                            self.source.valid.eq(1),
-                            self.source.last.eq(1),
-                            self.source.data.eq(prevdata),
+                            source.valid.eq(1),
+                            source.last.eq(1),
+                            source.data.eq(prevdata),
                             prevdataset.eq(0)
                         ).Else(
-                            self.source.valid.eq(0),
+                            source.valid.eq(0),
                         )
                     ).Else(
-                        self.source.valid.eq(0),
+                        source.valid.eq(0),
                     )
                 )
             ).Else(
-                self.source.valid.eq(0),
+                source.valid.eq(0),
             )
         ]
 
