@@ -101,7 +101,6 @@ if __name__ == '__main__':
         identifier += "%c" %eb.read(eb.bases.identifier_mem + 4*i)
     print("\nSoC identifier: " + identifier)
 
-    eb.regs.ulpi_core_splitter_delimiter.write(0x48) # delimiter
     eb.regs.ulpi_filter_mask.write(ULPIFilter.SOF)
 
     ulpi_init(eb)

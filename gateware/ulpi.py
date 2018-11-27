@@ -172,14 +172,17 @@ class ULPISplitter(Module, AutoCSR):
         self.sink = sink = stream.Endpoint([('data', 8), ('cmd', 1)])
         self.source = source = stream.Endpoint([('data', 8)])
 
-        self.delimiter = CSRStorage(8, reset=0x48)
-
         # # #
+
+        linestate = Signal(2)
+        rxevent = Signal(2)
 
         prevdata = Signal(8)
         prevdataset = Signal()
 
         self.comb += [
+            linestate.eq(sink.data[0:2]),
+            rxevent.eq(sink.data[4:6]),
             sink.ready.eq(sink.valid),
         ]
 
@@ -194,7 +197,7 @@ class ULPISplitter(Module, AutoCSR):
                     prevdata.eq(sink.data),
                     prevdataset.eq(1)
                 ).Else(
-                    If(sink.data == self.delimiter.storage,
+                    If((linestate == 0) & (rxevent == 0), # line inactive
                         If(prevdataset,
                             source.valid.eq(1),
                             source.last.eq(1),
