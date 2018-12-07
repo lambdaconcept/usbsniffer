@@ -215,9 +215,38 @@ class ULPISplitter(Module, AutoCSR):
             )
         ]
 
+class ULPIEncoder(Module, AutoCSR):
+    def __init__(self):
+        self.sink = sink = stream.Endpoint(ulpi_description(8))
+        self.source = source = stream.Endpoint(ulpi_description(8))
+
+        # # #
+
+        tx_cmd = Signal(8)
+
+        self.comb += [
+            tx_cmd[6:8].eq(0x01), # Transmit
+            tx_cmd[4:6].eq(0),
+            tx_cmd[0:4].eq(sink.data[0:4]), # PID
+        ]
+
+        self.comb += [
+            source.valid.eq(sink.valid),
+            source.first.eq(sink.first),
+            If(sink.first,
+                source.data.eq(tx_cmd),
+            ).Else(
+                source.data.eq(sink.data),
+            ),
+            source.last.eq(sink.last),
+            sink.ready.eq(source.ready),
+        ]
+
 class ULPICore(Module, AutoCSR):
     def __init__(self, phy):
         self.submodules.splitter = ULPISplitter()
+        self.submodules.encoder = ULPIEncoder()
+        self.sink = self.encoder.sink
         self.source = self.splitter.source
 
         self.reg_adr = CSRStorage(6)
@@ -239,7 +268,8 @@ class ULPICore(Module, AutoCSR):
             ).Elif(self.reg_read.re,
                 NextState("READ_FLUSH")
             ).Else(
-                phy.source.connect(self.splitter.sink)
+                phy.source.connect(self.splitter.sink),
+                self.encoder.source.connect(phy.sink),
             ),
             NextValue(flushcnt, 0)
         )
