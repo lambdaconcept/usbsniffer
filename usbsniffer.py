@@ -7,11 +7,13 @@ from litex.build.generic_platform import *
 from litex.build.xilinx import XilinxPlatform
 
 from litex.soc.interconnect.csr import *
+from litex.soc.integration.soc_core import *
 from litex.soc.integration.soc_sdram import *
 from litex.soc.integration.builder import *
 from litex.soc.integration.cpu_interface import get_csr_header
 from litex.soc.interconnect import stream
 from litex.soc.cores.uart import UARTWishboneBridge, RS232PHY
+from litex.soc.cores.gpio import GPIOOut
 
 from litedram import sdram_init
 from litedram.modules import MT41K256M16
@@ -90,13 +92,29 @@ _io = [
         IOStandard("LVCMOS33"), Misc("SLEW=FAST")
     ),
 
-   ("ulpi_clock", 0, Pins("W19"), IOStandard("LVCMOS33")),
-   ("ulpi", 0,
+    ("ulpi_sw", 0,
+        Subsignal("s", Pins("Y8")),
+        Subsignal("oe_n", Pins("Y9")),
+        IOStandard("LVCMOS33"),
+    ),
+
+    ("ulpi_clock", 0, Pins("W19"), IOStandard("LVCMOS33")),
+    ("ulpi", 0,
         Subsignal("data", Pins("AB18 AA18 AA19 AB20 AA20 AB21 AA21 AB22")),
         Subsignal("dir", Pins("W21")),
         Subsignal("stp", Pins("Y22")),
         Subsignal("nxt", Pins("W22")),
         Subsignal("rst", Pins("V20")),
+        IOStandard("LVCMOS33"), Misc("SLEW=FAST")
+    ),
+
+    ("ulpi_clock", 1, Pins("V4"), IOStandard("LVCMOS33")),
+    ("ulpi", 1,
+        Subsignal("data", Pins("AB2 AA3 AB3 Y4 AA4 AB5 AA5 AB6")),
+        Subsignal("dir", Pins("AB7")),
+        Subsignal("stp", Pins("AA6")),
+        Subsignal("nxt", Pins("AB8")),
+        Subsignal("rst", Pins("AA8")),
         IOStandard("LVCMOS33"), Misc("SLEW=FAST")
     ),
 ]
@@ -107,7 +125,7 @@ class Platform(XilinxPlatform):
     default_clk_period = 10.0
 
     def __init__(self, toolchain="vivado", programmer="vivado"):
-        XilinxPlatform.__init__(self, "xc7a50t-fgg484-1", _io,
+        XilinxPlatform.__init__(self, "xc7a35t-fgg484-1", _io,
                                 toolchain=toolchain)
         self.toolchain.bitstream_commands = \
             ["set_property BITSTREAM.CONFIG.SPI_BUSWIDTH 4 [current_design]",
@@ -190,14 +208,16 @@ class _CRG(Module, AutoCSR):
 
 
 class USBSnifferSoC(SoCSDRAM):
-    csr_map = {
-        "ddrphy":      16,
-        "ulpi_phy":    17,
-        "ulpi_core":   18,
-        "ulpi_filter": 19,
-        "analyzer":    20
-    }
-    csr_map.update(SoCSDRAM.csr_map)
+    csr_peripherals = [
+        "ddrphy",
+        "ulpi_phy",
+        "ulpi_core",
+        "ulpi_filter",
+        "ulpi_sw_oe_n",
+        "ulpi_sw_s",
+        "analyzer",
+    ]
+    csr_map_update(SoCSDRAM.csr_map, csr_peripherals)
 
     usb_map = {
         "wishbone": 0,
@@ -240,6 +260,11 @@ class USBSnifferSoC(SoCSDRAM):
         # dram fifo
         depth = 128 * 1024 * 1024
         self.submodules.fifo = LiteDRAMFIFO([("data", 8)], depth, 0, self.sdram.crossbar)
+
+        # ulpi switch
+        ulpi_sw = platform.request("ulpi_sw")
+        self.submodules.ulpi_sw_oe_n = GPIOOut(ulpi_sw.oe_n)
+        self.submodules.ulpi_sw_s = GPIOOut(ulpi_sw.s)
 
         # usb <--> ulpi
         self.submodules.ltpacker = LTPacker()
