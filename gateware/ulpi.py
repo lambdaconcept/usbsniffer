@@ -10,14 +10,14 @@ def ulpi_description(dw):
     return stream.EndpointDescription(payload_layout)
 
 class ULPIPHY(Module, AutoCSR):
-    def __init__(self, pads):
-        self.submodules.ulpi_phy = ClockDomainsRenamer("ulpi")(ULPIPHYS7(pads))
+    def __init__(self, pads, cd="ulpi"):
+        self.submodules.ulpi_phy = ClockDomainsRenamer(cd)(ULPIPHYS7(pads))
 
         fifo_sink = stream.AsyncFIFO(self.ulpi_phy.sink.description, 4)
-        self.submodules.fifo_sink = ClockDomainsRenamer({"write": "sys", "read": "ulpi"})(fifo_sink)
+        self.submodules.fifo_sink = ClockDomainsRenamer({"write": "sys", "read": cd})(fifo_sink)
 
         fifo_source = stream.AsyncFIFO(self.ulpi_phy.source.description, 4)
-        self.submodules.fifo_source = ClockDomainsRenamer({"write": "ulpi", "read": "sys"})(fifo_source)
+        self.submodules.fifo_source = ClockDomainsRenamer({"write": cd, "read": "sys"})(fifo_source)
 
         self.sink = self.fifo_sink.sink
         self.source = self.fifo_source.source

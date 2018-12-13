@@ -140,7 +140,8 @@ class Platform(XilinxPlatform):
 class _CRG(Module, AutoCSR):
     def __init__(self, platform):
         self.clock_domains.cd_sys = ClockDomain("sys")
-        self.clock_domains.cd_ulpi = ClockDomain("ulpi")
+        self.clock_domains.cd_ulpi0 = ClockDomain("ulpi0")
+        self.clock_domains.cd_ulpi1 = ClockDomain("ulpi1")
         self.clock_domains.cd_sys4x = ClockDomain(reset_less=True)
         self.clock_domains.cd_sys4x_dqs = ClockDomain(reset_less=True)
         self.clock_domains.cd_clk200 = ClockDomain()
@@ -151,8 +152,11 @@ class _CRG(Module, AutoCSR):
         self.comb += self.cd_usb.clk.eq(platform.request("usb_fifo_clock"))
         self.comb += self.cd_usb.rst.eq(self.cd_sys.rst)
 
-        # ulpi clock domain (60MHz from ulpi)
-        self.comb += self.cd_ulpi.clk.eq(platform.request("ulpi_clock"))
+        # ulpi0 clock domain (60MHz from ulpi0)
+        self.comb += self.cd_ulpi0.clk.eq(platform.request("ulpi_clock", 0))
+
+        # ulpi1 clock domain (60MHz from ulpi1)
+        self.comb += self.cd_ulpi1.clk.eq(platform.request("ulpi_clock", 1))
 
         clk100 = platform.request("clk100")
 
@@ -210,9 +214,12 @@ class _CRG(Module, AutoCSR):
 class USBSnifferSoC(SoCSDRAM):
     csr_peripherals = [
         "ddrphy",
-        "ulpi_phy",
-        "ulpi_core",
-        "ulpi_filter",
+        "ulpi_phy0",
+        "ulpi_phy1",
+        "ulpi_core0",
+        "ulpi_core1",
+        "ulpi_filter0",
+        "ulpi_filter1",
         "ulpi_sw_oe_n",
         "ulpi_sw_s",
         "analyzer",
@@ -221,7 +228,8 @@ class USBSnifferSoC(SoCSDRAM):
 
     usb_map = {
         "wishbone": 0,
-        "ulpi": 1,
+        "ulpi0":    1,
+        "ulpi1":    2,
     }
 
     def __init__(self, platform, with_analyzer=False):
@@ -231,7 +239,7 @@ class USBSnifferSoC(SoCSDRAM):
             integrated_rom_size=0,
             integrated_sram_size=0x8000,
             with_uart=False,
-            ident="USBSniffer design",
+            ident="USB2Sniffer design",
             with_timer=False
         )
         self.submodules.crg = _CRG(platform)
@@ -242,11 +250,6 @@ class USBSnifferSoC(SoCSDRAM):
         self.register_sdram(self.ddrphy,
                             sdram_module.geom_settings,
                             sdram_module.timing_settings)
-
-        # ulpi
-        self.submodules.ulpi_phy = ULPIPHY(platform.request("ulpi"))
-        self.submodules.ulpi_core = ULPICore(self.ulpi_phy)
-        self.submodules.ulpi_filter = ULPIFilter()
 
         # usb core
         usb_pads = platform.request("usb_fifo")
@@ -266,14 +269,24 @@ class USBSnifferSoC(SoCSDRAM):
         self.submodules.ulpi_sw_oe_n = GPIOOut(ulpi_sw.oe_n)
         self.submodules.ulpi_sw_s = GPIOOut(ulpi_sw.s)
 
-        # usb <--> ulpi
-        self.submodules.ltpacker = LTPacker()
-        self.submodules.ltcore = LTCore(self.usb_core, self.usb_map["ulpi"])
+        # ulpi 0
+        self.submodules.ulpi_phy0 = ULPIPHY(platform.request("ulpi", 0), cd="ulpi0")
+        self.submodules.ulpi_core0 = ULPICore(self.ulpi_phy0)
+        self.submodules.ulpi_filter0 = ULPIFilter()
+
+        # ulpi 1
+        self.submodules.ulpi_phy1 = ULPIPHY(platform.request("ulpi", 1), cd="ulpi1")
+        self.submodules.ulpi_core1 = ULPICore(self.ulpi_phy1)
+        self.submodules.ulpi_filter1 = ULPIFilter()
+
+        # usb <--> ulpi0
+        self.submodules.ltpacker0 = LTPacker()
+        self.submodules.ltcore0 = LTCore(self.usb_core, self.usb_map["ulpi0"])
         self.comb += [
-            self.ulpi_core.source.connect(self.ulpi_filter.sink),
-            self.ulpi_filter.source.connect(self.fifo.sink),
-            self.fifo.source.connect(self.ltpacker.sink),
-            self.ltpacker.source.connect(self.ltcore.sender.sink),
+            self.ulpi_core0.source.connect(self.ulpi_filter0.sink),
+            self.ulpi_filter0.source.connect(self.fifo.sink),
+            self.fifo.source.connect(self.ltpacker0.sink),
+            self.ltpacker0.source.connect(self.ltcore0.sender.sink),
         ]
 
         # leds
@@ -286,9 +299,9 @@ class USBSnifferSoC(SoCSDRAM):
 
         led1 = platform.request("rgb_led", 1)
         self.comb += [
-            led1.r.eq(~self.ulpi_core.source.valid),
+            led1.r.eq(~self.ulpi_core0.source.valid),
             led1.g.eq(~0),
-            led1.b.eq(~self.ltcore.sender.source.valid),
+            led1.b.eq(~self.ltcore0.sender.source.valid),
         ]
 
         # timing constraints
