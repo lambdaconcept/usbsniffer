@@ -3,8 +3,11 @@ from migen import *
 from migen.fhdl.specials import Tristate
 
 from litex.soc.interconnect import stream
+from litex.soc.interconnect.stream import EndpointDescription
 
-from liteusb.phy.ft245 import phy_description
+def phy_description(dw):
+    payload_layout = [("data", dw)]
+    return EndpointDescription(payload_layout)
 
 class FT601Sync(Module):
     def __init__(self, pads, dw=32, timeout=1024):

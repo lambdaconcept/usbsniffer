@@ -21,7 +21,7 @@ from litedram.phy import a7ddrphy
 
 from gateware.usb import USBCore
 from gateware.etherbone import Etherbone
-from gateware.ft601 import FT601Sync
+from gateware.ft601 import FT601Sync, phy_description
 from gateware.ulpi import ULPIPHY, ULPICore, ULPIFilter
 from gateware.packer import LTCore, LTPacker
 from gateware.dramfifo import LiteDRAMFIFO
