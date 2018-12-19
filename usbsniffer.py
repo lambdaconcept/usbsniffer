@@ -232,7 +232,7 @@ class USBSnifferSoC(SoCSDRAM):
         "ulpi1":    2,
     }
 
-    def __init__(self, platform, with_analyzer=False):
+    def __init__(self, platform, with_analyzer=False, with_loopback=False):
         clk_freq = int(100e6)
         SoCSDRAM.__init__(self, platform, clk_freq,
             cpu_type=None,
@@ -251,58 +251,67 @@ class USBSnifferSoC(SoCSDRAM):
                             sdram_module.geom_settings,
                             sdram_module.timing_settings)
 
-        # usb core
-        usb_pads = platform.request("usb_fifo")
-        self.submodules.usb_phy = FT601Sync(usb_pads, dw=32, timeout=1024)
-        self.submodules.usb_core = USBCore(self.usb_phy, clk_freq)
-
-        # usb <--> wishbone
-        self.add_cpu(Etherbone(self.usb_core, self.usb_map["wishbone"]))
-        self.add_wb_master(self.cpu.master.bus)
-
-        # dram fifo
+        # sdram fifo
         depth = 128 * 1024 * 1024
         self.submodules.fifo = LiteDRAMFIFO([("data", 8)], depth, 0, self.sdram.crossbar)
 
-        # ulpi switch
-        ulpi_sw = platform.request("ulpi_sw")
-        self.submodules.ulpi_sw_oe_n = GPIOOut(ulpi_sw.oe_n)
-        self.submodules.ulpi_sw_s = GPIOOut(ulpi_sw.s)
+        # usb phy
+        usb_pads = platform.request("usb_fifo")
+        self.submodules.usb_phy = FT601Sync(usb_pads, dw=32, timeout=1024)
 
-        # ulpi 0
-        self.submodules.ulpi_phy0 = ULPIPHY(platform.request("ulpi", 0), cd="ulpi0")
-        self.submodules.ulpi_core0 = ULPICore(self.ulpi_phy0)
-        self.submodules.ulpi_filter0 = ULPIFilter()
+        if with_loopback:
+            self.submodules.usb_loopback_fifo = stream.SyncFIFO(phy_description(32), 2048)
+            self.comb += [
+                self.usb_phy.source.connect(self.usb_loopback_fifo.sink),
+                self.usb_loopback_fifo.source.connect(self.usb_phy.sink)
+            ]
+        else:
+            # usb core
+            self.submodules.usb_core = USBCore(self.usb_phy, clk_freq)
 
-        # ulpi 1
-        self.submodules.ulpi_phy1 = ULPIPHY(platform.request("ulpi", 1), cd="ulpi1")
-        self.submodules.ulpi_core1 = ULPICore(self.ulpi_phy1)
-        self.submodules.ulpi_filter1 = ULPIFilter()
+            # usb <--> wishbone
+            self.add_cpu(Etherbone(self.usb_core, self.usb_map["wishbone"]))
+            self.add_wb_master(self.cpu.master.bus)
 
-        # usb <--> ulpi0
-        self.submodules.ltpacker0 = LTPacker()
-        self.submodules.ltcore0 = LTCore(self.usb_core, self.usb_map["ulpi0"])
-        self.comb += [
-            self.ulpi_core0.source.connect(self.ulpi_filter0.sink),
-            self.ulpi_filter0.source.connect(self.fifo.sink),
-            self.fifo.source.connect(self.ltpacker0.sink),
-            self.ltpacker0.source.connect(self.ltcore0.sender.sink),
-        ]
+            # ulpi switch
+            ulpi_sw = platform.request("ulpi_sw")
+            self.submodules.ulpi_sw_oe_n = GPIOOut(ulpi_sw.oe_n)
+            self.submodules.ulpi_sw_s = GPIOOut(ulpi_sw.s)
 
-        # leds
-        led0 = platform.request("rgb_led", 0)
-        self.comb += [
-            led0.r.eq(~self.cpu.packet.tx.source.valid),
-            led0.g.eq(~0),
-            led0.b.eq(~self.cpu.packet.rx.sink.valid),
-        ]
+            # ulpi 0
+            self.submodules.ulpi_phy0 = ULPIPHY(platform.request("ulpi", 0), cd="ulpi0")
+            self.submodules.ulpi_core0 = ULPICore(self.ulpi_phy0)
+            self.submodules.ulpi_filter0 = ULPIFilter()
 
-        led1 = platform.request("rgb_led", 1)
-        self.comb += [
-            led1.r.eq(~self.ulpi_core0.source.valid),
-            led1.g.eq(~0),
-            led1.b.eq(~self.ltcore0.sender.source.valid),
-        ]
+            # ulpi 1
+            self.submodules.ulpi_phy1 = ULPIPHY(platform.request("ulpi", 1), cd="ulpi1")
+            self.submodules.ulpi_core1 = ULPICore(self.ulpi_phy1)
+            self.submodules.ulpi_filter1 = ULPIFilter()
+
+            # usb <--> ulpi0
+            self.submodules.ltpacker0 = LTPacker()
+            self.submodules.ltcore0 = LTCore(self.usb_core, self.usb_map["ulpi0"])
+            self.comb += [
+                self.ulpi_core0.source.connect(self.ulpi_filter0.sink),
+                self.ulpi_filter0.source.connect(self.fifo.sink),
+                self.fifo.source.connect(self.ltpacker0.sink),
+                self.ltpacker0.source.connect(self.ltcore0.sender.sink),
+            ]
+
+            # leds
+            led0 = platform.request("rgb_led", 0)
+            self.comb += [
+                led0.r.eq(~self.cpu.packet.tx.source.valid),
+                led0.g.eq(~0),
+                led0.b.eq(~self.cpu.packet.rx.sink.valid),
+            ]
+
+            led1 = platform.request("rgb_led", 1)
+            self.comb += [
+                led1.r.eq(~self.ulpi_core0.source.valid),
+                led1.g.eq(~0),
+                led1.b.eq(~self.ltcore0.sender.source.valid),
+            ]
 
         # timing constraints
         self.crg.cd_sys.clk.attr.add("keep")
@@ -333,7 +342,7 @@ class USBSnifferSoC(SoCSDRAM):
 
 def main():
     platform = Platform()
-    soc = USBSnifferSoC(platform)
+    soc = USBSnifferSoC(platform, with_loopback=False)
     builder = Builder(soc, output_dir="build", csr_csv="test/csr.csv")
     vns = builder.build()
     soc.do_exit(vns)
