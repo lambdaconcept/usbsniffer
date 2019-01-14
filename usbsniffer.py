@@ -211,6 +211,52 @@ class _CRG(Module, AutoCSR):
         self.specials += Instance("IDELAYCTRL", i_REFCLK=ClockSignal("clk200"), i_RST=ic_reset)
 
 
+class BlinkerKeep(Module):
+    def __init__(self, s, timeout=int(1e6)):
+        self.o = Signal()
+
+        # # #
+
+        counter = Signal(max=timeout+1)
+        self.sync += [
+            If(s,
+                counter.eq(timeout),
+            ).Elif(counter > 0,
+                counter.eq(counter - 1),
+            ).Else(
+                counter.eq(0),
+            )
+        ]
+
+        self.comb += self.o.eq(counter > 0)
+
+
+class BlinkerRGB(Module, AutoCSR):
+    def __init__(self, leds, sr, sg, sb, divbits=27):
+        self.forceblink = CSRStorage()
+
+        # # #
+
+        self.submodules.keepr = BlinkerKeep(sr)
+        self.submodules.keepg = BlinkerKeep(sg)
+        self.submodules.keepb = BlinkerKeep(sb)
+
+        counter = Signal(divbits + 2)
+        self.sync += counter.eq(counter + 1)
+
+        self.comb += [
+            If(self.forceblink.storage,
+                leds.r.eq(~counter[divbits-3]),
+                leds.g.eq(~counter[divbits-2]),
+                leds.b.eq(~counter[divbits-1]),
+            ).Else(
+                leds.r.eq(~self.keepr.o),
+                leds.g.eq(~self.keepg.o),
+                leds.b.eq(~self.keepb.o),
+            )
+        ]
+
+
 class USBSnifferSoC(SoCSDRAM):
     csr_peripherals = [
         "ddrphy",
@@ -222,6 +268,9 @@ class USBSnifferSoC(SoCSDRAM):
         "ulpi_filter1",
         "ulpi_sw_oe_n",
         "ulpi_sw_s",
+        "ltpacker0",
+        "blinker0",
+        "blinker1",
         "analyzer",
     ]
     csr_map_update(SoCSDRAM.csr_map, csr_peripherals)
@@ -300,18 +349,14 @@ class USBSnifferSoC(SoCSDRAM):
 
             # leds
             led0 = platform.request("rgb_led", 0)
-            self.comb += [
-                led0.r.eq(~self.cpu.packet.tx.source.valid),
-                led0.g.eq(~0),
-                led0.b.eq(~self.cpu.packet.rx.sink.valid),
-            ]
+            self.submodules.blinker0 = BlinkerRGB(led0,
+                    self.cpu.packet.tx.source.valid,
+                    0, self.cpu.packet.rx.sink.valid)
 
             led1 = platform.request("rgb_led", 1)
-            self.comb += [
-                led1.r.eq(~self.ulpi_core0.source.valid),
-                led1.g.eq(~0),
-                led1.b.eq(~self.ltcore0.sender.source.valid),
-            ]
+            self.submodules.blinker1 = BlinkerRGB(led1,
+                    self.ulpi_core0.source.valid,
+                    0, self.ltcore0.sender.source.valid)
 
         # timing constraints
         self.crg.cd_sys.clk.attr.add("keep")
@@ -332,12 +377,12 @@ class USBSnifferSoC(SoCSDRAM):
         csr_header = get_csr_header(self.get_csr_regions(),
                                     self.get_constants(),
                                     with_access_functions=True)
-        tools.write_to_file(os.path.join("software/csr.h"), csr_header)
+        tools.write_to_file(os.path.join("software/generated/csr.h"), csr_header)
 
         phy_header = sdram_init.get_sdram_phy_c_header(
                          self.sdram.controller.settings.phy,
                          self.sdram.controller.settings.timing)
-        tools.write_to_file(os.path.join("software/sdram_phy.h"), phy_header)
+        tools.write_to_file(os.path.join("software/generated/sdram_phy.h"), phy_header)
 
 
 def main():

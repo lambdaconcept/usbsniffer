@@ -82,3 +82,20 @@ error:
     printf("\t[ERROR]\n\n");
     return 1;
 }
+
+int check_leds(int fd, int num)
+{
+    uint32_t reg;
+
+    printf("LED %d blink test:\n", num);
+
+    /* Force LED blink */
+    if (num)
+        blinker1_forceblink_write(1);
+    else
+        blinker0_forceblink_write(1);
+
+    printf("\t[Check LEDS]\n\n");
+
+    return 0;
+}

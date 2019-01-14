@@ -12,7 +12,7 @@ void cdelay(int val)
     usleep(val);
 }
 
-static int _gfd;
+static FT_HANDLE _gfd;
 
 extern uint32_t eb_read_reg32(int fd, uint32_t addr);
 extern void eb_write_reg32(int fd, uint32_t addr, uint32_t val);
@@ -32,7 +32,6 @@ int main(int argc, char **argv)
     struct event_base *base;
     int i;
     int ret;
-    FT_HANDLE fd;
 
 #ifdef WIN32
     WSADATA wsa_data;
@@ -41,23 +40,28 @@ int main(int argc, char **argv)
 
     printf("USBSniffer Hardware Testsuite\n\n");
 
-    ret = FT601_Open(&fd);
+    ret = FT601_Open(&_gfd);
     if (!ret) {
         printf("Open failed: device not found\n");
         return ret;
     }
 
     /* Check BUS  */
-    check_soc_identifier(fd);
+    check_soc_identifier(_gfd);
 
     /* Check both ULPI chips */
     for (i=0; i<2; i++) {
-        check_ulpi_scratch(fd, i);
+        check_ulpi_scratch(_gfd, i);
     }
 
     /* Check SDRAM */
-    check_sdram(fd);
+    check_sdram(_gfd);
 
-    FT601_Close(fd);
+    /* Check LEDs */
+    for (i=0; i<2; i++) {
+        check_leds(_gfd, i);
+    }
+
+    FT601_Close(_gfd);
     return 0;
 }
