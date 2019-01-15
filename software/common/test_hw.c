@@ -1,9 +1,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <unistd.h>
+#include <fcntl.h>
 
+#ifdef WIN32
 #include "FTD3XX.h"
-#include "ft601.h"
+#include "windows/ft601.h"
+#endif
 
 #include "common/testsuite.h"
 
@@ -12,7 +16,12 @@ void cdelay(int val)
     usleep(val);
 }
 
+/* global handle used by csr read/write */
+#ifdef WIN32
 static FT_HANDLE _gfd;
+#else
+static int _gfd;
+#endif
 
 extern uint32_t eb_read_reg32(int fd, uint32_t addr);
 extern void eb_write_reg32(int fd, uint32_t addr, uint32_t val);
@@ -29,7 +38,6 @@ uint32_t csr_readl(uint32_t addr)
 
 int main(int argc, char **argv)
 {
-    struct event_base *base;
     int i;
     int ret;
 
@@ -40,7 +48,16 @@ int main(int argc, char **argv)
 
     printf("USBSniffer Hardware Testsuite\n\n");
 
+#ifdef WIN32
     ret = FT601_Open(&_gfd);
+#else
+    if (argc < 2) {
+        printf("usage: %s /dev/ft60xx\n", argv[0]);
+        exit(1);
+    }
+    _gfd = open(argv[1], O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+    ret = !(_gfd < 0);
+#endif
     if (!ret) {
         printf("Open failed: device not found\n");
         return ret;
@@ -62,6 +79,10 @@ int main(int argc, char **argv)
         check_leds(_gfd, i);
     }
 
+#ifdef WIN32
     FT601_Close(_gfd);
+#else
+    close(_gfd);
+#endif
     return 0;
 }

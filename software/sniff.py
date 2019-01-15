@@ -1,3 +1,4 @@
+import sys
 import time
 
 from sdram_init import *
@@ -115,7 +116,11 @@ def lt_unpack(eb, data):
     print("({}, {}): {}".format(ts, length, payload.hex()))
 
 if __name__ == '__main__':
-    usbmux = USBMux("/dev/ft60x0")
+    if len(sys.argv) < 2:
+        print("usage: {} /dev/ft60xx".format(sys.argv[0]))
+        sys.exit(1)
+
+    usbmux = USBMux(sys.argv[1])
     eb = Etherbone(usbmux, STREAMID_WISHBONE,
                           csr_csv="test/csr.csv", csr_data_width=8, debug=False)
 
