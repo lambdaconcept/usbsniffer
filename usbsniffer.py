@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+import math
+
 from migen import *
 from migen.genlib.resetsync import AsyncResetSynchronizer
 
@@ -25,6 +27,8 @@ from gateware.ft601 import FT601Sync, phy_description
 from gateware.ulpi import ULPIPHY, ULPICore, ULPIFilter
 from gateware.packer import LTCore, LTPacker
 from gateware.dramfifo import LiteDRAMFIFO
+from gateware.spi import SPIMaster
+from gateware.flash import Flash
 
 from litescope import LiteScopeAnalyzer
 
@@ -75,6 +79,15 @@ _io = [
         Subsignal("odt", Pins("K4"), IOStandard("SSTL15")),
         Subsignal("reset_n", Pins("G1"), IOStandard("SSTL15")),
         Misc("SLEW=FAST"),
+    ),
+
+    ("flash", 0,
+        Subsignal("cs_n", Pins("T19")),
+        Subsignal("mosi", Pins("P22")),
+        Subsignal("miso", Pins("R22")),
+        Subsignal("vpp", Pins("P21")),
+        Subsignal("hold", Pins("R21")),
+        IOStandard("LVCMOS33")
     ),
 
     ("usb_fifo_clock", 0, Pins("D17"), IOStandard("LVCMOS33")),
@@ -259,6 +272,7 @@ class BlinkerRGB(Module, AutoCSR):
 
 class USBSnifferSoC(SoCSDRAM):
     csr_peripherals = [
+        "flash",
         "ddrphy",
         "ulpi_phy0",
         "ulpi_phy1",
@@ -285,6 +299,8 @@ class USBSnifferSoC(SoCSDRAM):
         clk_freq = int(100e6)
         SoCSDRAM.__init__(self, platform, clk_freq,
             cpu_type=None,
+            l2_size=32,
+            csr_data_width=32, csr_address_width=15, # required for flash spi
             integrated_rom_size=0,
             integrated_sram_size=0x8000,
             with_uart=False,
@@ -292,6 +308,9 @@ class USBSnifferSoC(SoCSDRAM):
             with_timer=False
         )
         self.submodules.crg = _CRG(platform)
+
+        # flash spi
+        self.submodules.flash = Flash(platform.request("flash"), div=math.ceil(clk_freq/25e6))
 
         # sdram
         self.submodules.ddrphy = a7ddrphy.A7DDRPHY(platform.request("ddram"))
