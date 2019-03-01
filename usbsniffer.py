@@ -26,6 +26,8 @@ from gateware.etherbone import Etherbone
 from gateware.ft601 import FT601Sync, phy_description
 from gateware.ulpi import ULPIPHY, ULPICore, ULPIFilter
 from gateware.packer import LTCore, LTPacker
+from gateware.iti import ITIPacker
+from gateware.wrapper import WrapCore
 from gateware.dramfifo import LiteDRAMFIFO
 from gateware.spi import SPIMaster
 from gateware.flash import Flash
@@ -282,7 +284,8 @@ class USBSnifferSoC(SoCSDRAM):
         "ulpi_filter1",
         "ulpi_sw_oe_n",
         "ulpi_sw_s",
-        "ltpacker0",
+        "itipacker0",
+        "itipacker1",
         "blinker0",
         "blinker1",
         "analyzer",
@@ -321,7 +324,8 @@ class USBSnifferSoC(SoCSDRAM):
 
         # sdram fifo
         depth = 128 * 1024 * 1024
-        self.submodules.fifo = LiteDRAMFIFO([("data", 8)], depth, 0, self.sdram.crossbar)
+        self.submodules.fifo = LiteDRAMFIFO([("data", 8)], depth, 0, self.sdram.crossbar,
+                                            preserve_first_last=False)
 
         # usb phy
         usb_pads = platform.request("usb_fifo")
@@ -349,21 +353,18 @@ class USBSnifferSoC(SoCSDRAM):
             # ulpi 0
             self.submodules.ulpi_phy0 = ULPIPHY(platform.request("ulpi", 0), cd="ulpi0")
             self.submodules.ulpi_core0 = ULPICore(self.ulpi_phy0)
-            self.submodules.ulpi_filter0 = ULPIFilter()
 
             # ulpi 1
             self.submodules.ulpi_phy1 = ULPIPHY(platform.request("ulpi", 1), cd="ulpi1")
             self.submodules.ulpi_core1 = ULPICore(self.ulpi_phy1)
-            self.submodules.ulpi_filter1 = ULPIFilter()
 
             # usb <--> ulpi0
-            self.submodules.ltpacker0 = LTPacker()
-            self.submodules.ltcore0 = LTCore(self.usb_core, self.usb_map["ulpi0"])
+            self.submodules.itipacker0 = ITIPacker()
+            self.submodules.wrapcore0 = WrapCore(self.usb_core, self.usb_map["ulpi0"])
             self.comb += [
-                self.ulpi_core0.source.connect(self.ulpi_filter0.sink),
-                self.ulpi_filter0.source.connect(self.fifo.sink),
-                self.fifo.source.connect(self.ltpacker0.sink),
-                self.ltpacker0.source.connect(self.ltcore0.sender.sink),
+                self.ulpi_core0.source.connect(self.itipacker0.sink),
+                self.itipacker0.source.connect(self.fifo.sink),
+                self.fifo.source.connect(self.wrapcore0.sink),
             ]
 
             # leds
@@ -375,7 +376,7 @@ class USBSnifferSoC(SoCSDRAM):
             led1 = platform.request("rgb_led", 1)
             self.submodules.blinker1 = BlinkerRGB(led1,
                     self.ulpi_core0.source.valid,
-                    0, self.ltcore0.sender.source.valid)
+                    0, self.wrapcore0.sender.source.valid)
 
         # timing constraints
         self.crg.cd_sys.clk.attr.add("keep")
