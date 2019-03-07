@@ -16,6 +16,9 @@ PAYLOAD_EVENT = 1
 PAYLOAD_DATA  = 2
 PAYLOAD_RXCMD = 3
 
+EVENT_START     = 0xe0
+EVENT_STOP      = 0xf1
+
 
 class ITITime(Module, AutoCSR):
     # XXX maybe run this in ULPI clock domain
@@ -66,6 +69,26 @@ class ITITime(Module, AutoCSR):
         ]
 
 
+class ITIEvent(Module, AutoCSR):
+    def __init__(self):
+        self.event = CSR(8)
+
+        self.data = data = Signal.like(self.event.r)
+        self.new = new = Signal()
+        self.ack = ack = Signal()
+
+        # # #
+
+        self.sync += [
+            If(self.event.re,
+                data.eq(self.event.r),
+                new.eq(1),
+            ).Elif(~self.event.re & ack,
+                new.eq(0),
+            )
+        ]
+
+
 class ITIPacker(Module, AutoCSR):
     def __init__(self):
         self.sink = sink = stream.Endpoint([('data', 8), ('cmd', 1)])
@@ -74,6 +97,7 @@ class ITIPacker(Module, AutoCSR):
         # # #
 
         self.submodules.time = ITITime()
+        self.submodules.ev = ITIEvent()
 
         payload_type = Signal(2)
         payload = Signal.like(sink.data)
@@ -91,6 +115,20 @@ class ITIPacker(Module, AutoCSR):
                 NextValue(diff, 2**28 - 1), # max value
                 NextValue(length, 3), # max length
                 self.time.clear.eq(1),
+
+                NextState("HEADER"),
+
+            ).Elif(self.ev.new,
+
+                # store and ack event
+                NextValue(payload, self.ev.data),
+                NextValue(payload_type, PAYLOAD_EVENT),
+                self.ev.ack.eq(1),
+
+                # fetch time increment
+                NextValue(diff, self.time.diff),
+                NextValue(length, self.time.len),
+                self.time.next.eq(1),
 
                 NextState("HEADER"),
 
@@ -198,6 +236,22 @@ def tb_pack(dut):
 
     # simulate overflow without data
     yield dut.time.diff.eq(2**28 - 10)
+    for i in range(100):
+        yield
+
+    # simulate start event
+    yield dut.ev.event.r.eq(0xe0)
+    yield dut.ev.event.re.eq(1)
+    yield
+    yield dut.ev.event.re.eq(0)
+    for i in range(100):
+        yield
+
+    # simulate stop event
+    yield dut.ev.event.r.eq(0xf1)
+    yield dut.ev.event.re.eq(1)
+    yield
+    yield dut.ev.event.re.eq(0)
     for i in range(100):
         yield
 
