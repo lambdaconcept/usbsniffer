@@ -327,6 +327,10 @@ class USBSnifferSoC(SoCSDRAM):
         self.submodules.fifo = LiteDRAMFIFO([("data", 8)], depth, 0, self.sdram.crossbar,
                                             preserve_first_last=False)
 
+        # debug wishbone
+        self.add_cpu(UARTWishboneBridge(platform.request("serial"), clk_freq, baudrate=3e6))
+        self.add_wb_master(self.cpu.wishbone)
+
         # usb phy
         usb_pads = platform.request("usb_fifo")
         self.submodules.usb_phy = FT601Sync(usb_pads, dw=32, timeout=1024)
@@ -342,8 +346,8 @@ class USBSnifferSoC(SoCSDRAM):
             self.submodules.usb_core = USBCore(self.usb_phy, clk_freq)
 
             # usb <--> wishbone
-            self.add_cpu(Etherbone(self.usb_core, self.usb_map["wishbone"]))
-            self.add_wb_master(self.cpu.master.bus)
+            self.submodules.etherbone = Etherbone(self.usb_core, self.usb_map["wishbone"])
+            self.add_wb_master(self.etherbone.master.bus)
 
             # ulpi switch
             ulpi_sw = platform.request("ulpi_sw")
@@ -370,8 +374,8 @@ class USBSnifferSoC(SoCSDRAM):
             # leds
             led0 = platform.request("rgb_led", 0)
             self.submodules.blinker0 = BlinkerRGB(led0,
-                    self.cpu.packet.tx.source.valid,
-                    0, self.cpu.packet.rx.sink.valid)
+                    self.etherbone.packet.tx.source.valid,
+                    0, self.etherbone.packet.rx.sink.valid)
 
             led1 = platform.request("rgb_led", 1)
             self.submodules.blinker1 = BlinkerRGB(led1,
@@ -386,6 +390,18 @@ class USBSnifferSoC(SoCSDRAM):
 
         if with_analyzer:
             analyzer_signals = [
+                self.ulpi_core0.source.valid,
+                self.ulpi_core0.source.ready,
+                self.ulpi_core0.source.data,
+                self.itipacker0.source.valid,
+                self.itipacker0.source.ready,
+                self.itipacker0.source.data,
+                self.fifo.source.valid,
+                self.fifo.source.ready,
+                self.fifo.source.data,
+                self.wrapcore0.sender.source.valid,
+                self.wrapcore0.sender.source.ready,
+                self.wrapcore0.sender.source.data,
             ]
             self.submodules.analyzer = LiteScopeAnalyzer(analyzer_signals, 1024, clock_domain="sys")
 
@@ -407,7 +423,7 @@ class USBSnifferSoC(SoCSDRAM):
 
 def main():
     platform = Platform()
-    soc = USBSnifferSoC(platform, with_loopback=False)
+    soc = USBSnifferSoC(platform, with_loopback=False, with_analyzer=False)
     builder = Builder(soc, output_dir="build", csr_csv="test/csr.csv")
     vns = builder.build()
     soc.do_exit(vns)
