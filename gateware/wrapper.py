@@ -29,7 +29,7 @@ class WrapCore(Module):
 
 
 class WrapSender(Module):
-    def __init__(self, identifier, depth=16):
+    def __init__(self, identifier, depth=128):
         self.submodules.buf = buf = stream.SyncFIFO(wrap_description(32), depth+1)
         self.sink = sink = buf.sink
         self.source = source = stream.Endpoint(usb_description(32))
@@ -69,7 +69,6 @@ class WrapSender(Module):
             buf.source.ready.eq(source.ready),
 
             If(source.valid & source.ready,
-                NextValue(count, count - 1),
 
                 If(source.last,
                     # if enough data stay in transfer state
@@ -78,7 +77,9 @@ class WrapSender(Module):
                     ).Else(
                         NextState("BUFFER"),
                     ),
-                ),
+                ).Else(
+                    NextValue(count, count - 1),
+                )
             ),
         )
 
