@@ -26,7 +26,7 @@ from gateware.etherbone import Etherbone
 from gateware.ft601 import FT601Sync, phy_description
 from gateware.ulpi import ULPIPHY, ULPICore, ULPIFilter
 from gateware.packer import LTCore, LTPacker
-from gateware.iti import ITIPacker
+from gateware.iti import ITIPacker, Conv4032
 from gateware.wrapper import WrapCore
 from gateware.dramfifo import LiteDRAMFIFO
 from gateware.spi import SPIMaster
@@ -323,8 +323,8 @@ class USBSnifferSoC(SoCSDRAM):
                             sdram_module.timing_settings)
 
         # sdram fifo
-        depth = 128 * 1024 * 1024
-        self.submodules.fifo = LiteDRAMFIFO([("data", 8)], depth, 0, self.sdram.crossbar,
+        depth = 32 * 1024 * 1024
+        self.submodules.dramfifo = LiteDRAMFIFO([("data", 32)], depth, 0, self.sdram.crossbar,
                                             preserve_first_last=False)
 
         # debug wishbone
@@ -364,11 +364,15 @@ class USBSnifferSoC(SoCSDRAM):
 
             # usb <--> ulpi0
             self.submodules.itipacker0 = ITIPacker()
+            self.submodules.fifo0 = stream.SyncFIFO([("data", 40), ("len", 2)], 16)
+            self.submodules.conv4032 = Conv4032()
             self.submodules.wrapcore0 = WrapCore(self.usb_core, self.usb_map["ulpi0"])
             self.comb += [
                 self.ulpi_core0.source.connect(self.itipacker0.sink),
-                self.itipacker0.source.connect(self.fifo.sink),
-                self.fifo.source.connect(self.wrapcore0.sink),
+                self.itipacker0.source.connect(self.fifo0.sink),
+                self.fifo0.source.connect(self.conv4032.sink),
+                self.conv4032.source.connect(self.dramfifo.sink),
+                self.dramfifo.source.connect(self.wrapcore0.sink),
             ]
 
             # leds

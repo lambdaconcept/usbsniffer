@@ -15,15 +15,13 @@ def wrap_description(dw):
 
 class WrapCore(Module):
     def __init__(self, usb_core, identifier):
-        self.submodules.converter = stream.StrideConverter(wrap_description(8), wrap_description(32))
-        self.sink = self.converter.sink
+        self.submodules.sender = sender = WrapSender(identifier)
+        self.sink = sender.sink
 
         # # #
 
-        self.submodules.sender = sender = WrapSender(identifier)
         usb_port = usb_core.crossbar.get_port(identifier)
         self.comb += [
-            self.converter.source.connect(sender.sink),
             sender.source.connect(usb_port.sink),
         ]
 
