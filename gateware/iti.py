@@ -92,7 +92,7 @@ class ITIEvent(Module, AutoCSR):
 class ITIPacker(Module, AutoCSR):
     def __init__(self):
         self.sink = sink = stream.Endpoint([('data', 8), ('cmd', 1)])
-        self.source = source = stream.Endpoint([("data", 8)])
+        self.source = source = stream.Endpoint([("data", 40), ("len", 2)])
 
         # # #
 
@@ -104,114 +104,239 @@ class ITIPacker(Module, AutoCSR):
         diff = Signal.like(self.time.diff)
         length = Signal.like(self.time.len)
 
-        fsm = FSM()
-        self.submodules.fsm = fsm
-
-        fsm.act("IDLE",
+        self.comb += [
             If(self.time.overflow,
 
-                # priority to overflow event
-                NextValue(payload_type, PAYLOAD_NONE),
-                NextValue(diff, 2**28 - 1), # max value
-                NextValue(length, 3), # max length
-                self.time.clear.eq(1),
+                # priority to overflow
+                payload.eq(0),
+                payload_type.eq(PAYLOAD_NONE),
+                diff.eq(2**28 - 1), # max value
+                length.eq(3), # max length
 
-                NextState("HEADER"),
+                # stream out
+                source.valid.eq(1),
+                If(source.ready,
+                    self.time.clear.eq(1),
+                ),
 
             ).Elif(self.ev.new,
 
-                # store and ack event
-                NextValue(payload, self.ev.data),
-                NextValue(payload_type, PAYLOAD_EVENT),
-                self.ev.ack.eq(1),
+                # received event
+                payload.eq(self.ev.data),
+                payload_type.eq(PAYLOAD_EVENT),
 
                 # fetch time increment
-                NextValue(diff, self.time.diff),
-                NextValue(length, self.time.len),
-                self.time.next.eq(1),
+                diff.eq(self.time.diff),
+                length.eq(self.time.len),
+                If(source.ready,
+                    self.time.next.eq(1),
+                ),
 
-                NextState("HEADER"),
+                # stream out
+                source.valid.eq(1),
+                If(source.ready,
+                    self.ev.ack.eq(1),
+                ),
 
             ).Elif(sink.valid,
 
-                # store payload and ack stream
-                sink.ready.eq(1),
-                NextValue(payload, sink.data),
-
+                # rxcmd or data
+                payload.eq(sink.data),
                 If(sink.cmd,
-                    NextValue(payload_type, PAYLOAD_RXCMD),
+                    payload_type.eq(PAYLOAD_RXCMD),
                 ).Else(
-                    NextValue(payload_type, PAYLOAD_DATA),
+                    payload_type.eq(PAYLOAD_DATA),
                 ),
 
                 # fetch time increment
-                NextValue(diff, self.time.diff),
-                NextValue(length, self.time.len),
-                self.time.next.eq(1),
-
-                NextState("HEADER"),
-            ),
-        )
-
-        fsm.act("HEADER",
-
-            # send header byte
-            source.data.eq(Cat(diff[0:4], length, payload_type)),
-            source.valid.eq(1),
-
-            If(source.ready,
-                If(length > 0,
-                    NextValue(diff, diff >> 4),
-                    NextState("TIMESTAMP"),
-                ).Else(
-                    If(payload_type != PAYLOAD_NONE,
-                        NextState("PAYLOAD"),
-                    ).Else(
-                        NextState("IDLE"),
-                    ),
+                diff.eq(self.time.diff),
+                length.eq(self.time.len),
+                If(source.ready,
+                    self.time.next.eq(1),
                 ),
+
+                # stream out
+                source.valid.eq(1),
+                If(source.ready,
+                    sink.ready.eq(1),
+                ),
+            )
+        ]
+
+        self.comb += [
+            # header
+            source.data[0:8].eq(Cat(diff[0:4], length, payload_type)),
+
+            # additional timestamp
+            If(length == 3,
+                source.data[24:32].eq(diff[20:28]),
+                source.data[16:24].eq(diff[12:20]),
+                source.data[ 8:16].eq(diff[ 4:12]),
+            ).Elif(length == 2,
+                source.data[16:24].eq(diff[12:20]),
+                source.data[ 8:16].eq(diff[ 4:12]),
+            ).Elif(length == 1,
+                source.data[ 8:16].eq(diff[ 4:12]),
+            ).Else(
+                # no timestamp
             ),
-        )
 
-        fsm.act("TIMESTAMP",
+            # payload
+            If(length == 3,
+                source.data[32:40].eq(payload),
+            ).Elif(length == 2,
+                source.data[24:32].eq(payload),
+            ).Elif(length == 1,
+                source.data[16:24].eq(payload),
+            ).Else(
+                source.data[ 8:16].eq(payload),
+            ),
 
-            # send additional timestamp bytes
-            source.data.eq(diff[0:8]),
-            source.valid.eq(1),
+            # length (-2 to keep value on 2 bits)
+            If(payload_type == PAYLOAD_NONE,
+                # 1 byte header + length bytes timestamp
+                source.len.eq(1 + length - 2),
+            ).Else(
+                # 1 byte header + length bytes timestamp + 1 byte payload
+                source.len.eq(1 + length + 1 - 2),
+            ),
+        ]
 
-            If(source.ready,
-                If(length > 1,
-                    NextValue(diff, diff >> 8),
-                    NextValue(length, length - 1),
-                ).Else(
-                    If(payload_type != PAYLOAD_NONE,
-                        NextState("PAYLOAD"),
-                    ).Else(
-                        NextState("IDLE"),
-                    ),
+
+class Conv4032(Module):
+    def __init__(self):
+        self.sink = sink = stream.Endpoint([('data', 40), ('len', 2)])
+        self.source = source = stream.Endpoint([('data', 32)])
+
+        tmp = Signal(32)
+        remain = Signal(2)
+        cases_comb = {}
+        send_next = Signal()
+        valid = Signal()
+
+        for i in range(16):
+            a= (i & 0xc) >> 2
+            b = i & 3
+            c = a+b+2
+
+            if(a+b+2 < 4):
+                d=a*8
+                e=0
+                v=0;
+            else:
+                d=0
+                e=(4-a)*8
+                v=1
+            f = c*8
+            if f > 32:
+                f = f-32
+            print("[{:02d}:{:02d}] <- [{:02d}:{:02d}]".format(d, f, e, (b+2)*8))
+            cases_comb[i] = [
+                If(self.sink.valid,
+                   NextValue(remain, c&3),
                 )
-            ),
+            ]
+            if a != 0:
+                cases_comb[i] += [
+                    If(self.sink.valid,
+                        self.source.data.eq(Cat(tmp[0:a*8], self.sink.data[0:(4-a)*8])),
+                    ),
+                ]
+            else:
+                cases_comb[i] += [
+                    If(self.sink.valid,
+                        self.source.data.eq(self.sink.data[0:(4-a)*8]),
+                    ),
+                ]
+
+            if e != (b+2)*8:
+                cases_comb[i] += [
+                    If(self.sink.valid,
+                       NextValue(tmp[d : f], self.sink.data[e:(b+2)*8])
+                    ),
+                ]
+
+            if(v==1):
+                cases_comb[i] += [valid.eq(1)]
+        # case 15 brings you to sending the last tmp
+        cases_comb[15] += [send_next.eq(1)]
+        fsm = FSM()
+        self.submodules += fsm
+
+        fsm.act("NORMAL",
+                Case(Cat(self.sink.len, remain), cases_comb),
+                self.source.valid.eq(valid & self.sink.valid),
+                self.sink.ready.eq(1),
+                If(send_next & self.sink.valid,
+                   NextState("SEND_EXTRA")
+                )
         )
 
-        fsm.act("PAYLOAD",
-
-            # send payload byte
-            source.data.eq(payload),
-            source.valid.eq(1),
-
-            If(source.ready,
-                NextState("IDLE"),
-            ),
+        fsm.act("SEND_EXTRA",
+                self.source.valid.eq(1),
+                self.source.data.eq(tmp),
+                If(self.source.ready,
+                   NextState("NORMAL")
+                )
         )
 
 
-# XXX need byte swapper ??
+def tb_conv(dut):
+    yield dut.conv4032.source.ready.eq(1)
+
+    it = iter(
+        [(0xa5, 0), (0xd2, 0), (0xcf, 1)] * 50
+    )
+    data, cmd = next(it)
+
+    while True:
+        yield dut.packer.sink.data.eq(data)
+        yield dut.packer.sink.cmd.eq(cmd)
+        yield dut.packer.sink.valid.eq(1)
+        yield
+        if (yield dut.packer.sink.ready):
+            try:
+                data, cmd = next(it)
+                # # simulate large time increment
+                # yield dut.sink.valid.eq(0)
+                # for i in range(100):
+                #     yield
+                # yield dut.time.diff.eq(2**28 - 10)
+            except StopIteration:
+                break
+
+    yield dut.packer.sink.valid.eq(0)
+    for i in range(100):
+        yield
+
+    # simulate overflow without data
+    yield dut.packer.time.diff.eq(2**28 - 10)
+    for i in range(100):
+        yield
+
+    # simulate start event
+    yield dut.packer.ev.event.r.eq(0xe0)
+    yield dut.packer.ev.event.re.eq(1)
+    yield
+    yield dut.packer.ev.event.re.eq(0)
+    for i in range(100):
+        yield
+
+    # simulate stop event
+    yield dut.packer.ev.event.r.eq(0xf1)
+    yield dut.packer.ev.event.re.eq(1)
+    yield
+    yield dut.packer.ev.event.re.eq(0)
+    for i in range(100):
+        yield
 
 
 def tb_pack(dut):
     yield dut.source.ready.eq(1)
 
-    it = iter([(0xa5, 0), (0xd2, 0), (0xcf, 1)])
+    it = iter(
+        [(0xa5, 0), (0xd2, 0), (0xcf, 1)] * 50
+    )
     data, cmd = next(it)
 
     while True:
@@ -222,11 +347,11 @@ def tb_pack(dut):
         if (yield dut.sink.ready):
             try:
                 data, cmd = next(it)
-                # simulate large time increment
-                yield dut.sink.valid.eq(0)
-                for i in range(100):
-                    yield
-                yield dut.time.diff.eq(2**28 - 10)
+                # # simulate large time increment
+                # yield dut.sink.valid.eq(0)
+                # for i in range(100):
+                #     yield
+                # yield dut.time.diff.eq(2**28 - 10)
             except StopIteration:
                 break
 
@@ -295,9 +420,21 @@ def tb_time(dut):
         yield
 
 
+class TopTestBench(Module):
+    def __init__(self):
+        self.submodules.packer = ITIPacker()
+        self.submodules.conv4032 = Conv4032()
+        self.comb += [
+            self.packer.source.connect(self.conv4032.sink),
+        ]
+
+
 if __name__ == "__main__":
     # dut = ITITime()
     # run_simulation(dut, tb_time(dut), vcd_name="test/iti_time.vcd")
 
-    dut = ITIPacker()
-    run_simulation(dut, tb_pack(dut), vcd_name="test/iti_pack.vcd")
+    # dut = ITIPacker()
+    # run_simulation(dut, tb_pack(dut), vcd_name="test/iti_pack.vcd")
+
+    dut = TopTestBench()
+    run_simulation(dut, tb_conv(dut), vcd_name="test/conv4032.vcd")
