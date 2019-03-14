@@ -232,7 +232,7 @@ class Conv4032(Module):
                 f = f-32
             print("[{:02d}:{:02d}] <- [{:02d}:{:02d}]".format(d, f, e, (b+2)*8))
             cases_comb[i] = [
-                If(self.sink.valid,
+                If(self.sink.valid & self.sink.ready,
                    NextValue(remain, c&3),
                 )
             ]
@@ -251,7 +251,7 @@ class Conv4032(Module):
 
             if e != (b+2)*8:
                 cases_comb[i] += [
-                    If(self.sink.valid,
+                    If(self.sink.valid & self.sink.ready,
                        NextValue(tmp[d : f], self.sink.data[e:(b+2)*8])
                     ),
                 ]
@@ -266,8 +266,10 @@ class Conv4032(Module):
         fsm.act("NORMAL",
                 Case(Cat(self.sink.len, remain), cases_comb),
                 self.source.valid.eq(valid & self.sink.valid),
-                self.sink.ready.eq(1),
-                If(send_next & self.sink.valid,
+                If((self.source.valid & self.source.ready) | ~self.source.valid,
+                    self.sink.ready.eq(1),
+                ),
+                If(send_next & self.sink.valid & self.source.valid & self.source.ready,
                    NextState("SEND_EXTRA")
                 )
         )
@@ -282,23 +284,30 @@ class Conv4032(Module):
 
 
 def tb_conv(dut):
-    yield dut.conv4032.source.ready.eq(1)
+    # yield dut.conv4032.source.ready.eq(1)
 
     it = iter(
         [(0xa5, 0), (0xd2, 0), (0xcf, 1)] * 50
     )
     data, cmd = next(it)
 
+    cnt = 0
     while True:
         yield dut.packer.sink.data.eq(data)
         yield dut.packer.sink.cmd.eq(cmd)
         yield dut.packer.sink.valid.eq(1)
+        # simulate not always ready
+        if ((cnt % 5) == 0):
+            yield dut.conv4032.source.ready.eq(1)
+        else:
+            yield dut.conv4032.source.ready.eq(0)
+        cnt += 1
         yield
         if (yield dut.packer.sink.ready):
             try:
                 data, cmd = next(it)
                 # # simulate large time increment
-                # yield dut.sink.valid.eq(0)
+                # yield dut.packer.sink.valid.eq(0)
                 # for i in range(100):
                 #     yield
                 # yield dut.time.diff.eq(2**28 - 10)
@@ -309,25 +318,46 @@ def tb_conv(dut):
     for i in range(100):
         yield
 
+    cnt = 0
     # simulate overflow without data
     yield dut.packer.time.diff.eq(2**28 - 10)
     for i in range(100):
+        # simulate not always ready
+        if ((cnt % 6) == 0):
+            yield dut.conv4032.source.ready.eq(1)
+        else:
+            yield dut.conv4032.source.ready.eq(0)
+        cnt += 1
         yield
 
+    cnt = 0
     # simulate start event
     yield dut.packer.ev.event.r.eq(0xe0)
     yield dut.packer.ev.event.re.eq(1)
     yield
     yield dut.packer.ev.event.re.eq(0)
     for i in range(100):
+        # simulate not always ready
+        if ((cnt % 6) == 0):
+            yield dut.conv4032.source.ready.eq(1)
+        else:
+            yield dut.conv4032.source.ready.eq(0)
+        cnt += 1
         yield
 
+    cnt = 0
     # simulate stop event
     yield dut.packer.ev.event.r.eq(0xf1)
     yield dut.packer.ev.event.re.eq(1)
     yield
     yield dut.packer.ev.event.re.eq(0)
     for i in range(100):
+        # simulate not always ready
+        if ((cnt % 6) == 0):
+            yield dut.conv4032.source.ready.eq(1)
+        else:
+            yield dut.conv4032.source.ready.eq(0)
+        cnt += 1
         yield
 
 
