@@ -9,6 +9,13 @@ def ulpi_description(dw):
     ]
     return stream.EndpointDescription(payload_layout)
 
+def ulpi_cmd_description(dw, cmddw):
+    payload_layout = [
+        ("data", dw),
+        ("cmd", cmddw),
+    ]
+    return stream.EndpointDescription(payload_layout)
+
 class ULPIPHY(Module, AutoCSR):
     def __init__(self, pads, cd="ulpi"):
         self.submodules.ulpi_phy = ClockDomainsRenamer(cd)(ULPIPHYS7(pads))
@@ -274,6 +281,8 @@ class ULPICore(Module, AutoCSR):
                 # phy.source.connect(self.splitter.sink),
                 If(self.enable_source.storage,
                     phy.source.connect(source),
+                ).Else(
+                    phy.source.ready.eq(1), # drop
                 ),
                 self.encoder.source.connect(phy.sink),
             ),

@@ -24,13 +24,14 @@ from litedram.phy import a7ddrphy
 from gateware.usb import USBCore
 from gateware.etherbone import Etherbone
 from gateware.ft601 import FT601Sync, phy_description
-from gateware.ulpi import ULPIPHY, ULPICore, ULPIFilter
+from gateware.ulpi import ULPIPHY, ULPICore, ULPIFilter, ulpi_cmd_description
 from gateware.packer import LTCore, LTPacker
 from gateware.iti import ITIPacker, Conv4032
 from gateware.wrapper import WrapCore
 from gateware.dramfifo import LiteDRAMFIFO
 from gateware.spi import SPIMaster
 from gateware.flash import Flash
+from gateware.storage import OverflowMeter
 
 from litescope import LiteScopeAnalyzer
 
@@ -280,8 +281,8 @@ class USBSnifferSoC(SoCSDRAM):
         "ulpi_phy1",
         "ulpi_core0",
         "ulpi_core1",
-        "ulpi_filter0",
-        "ulpi_filter1",
+        "overflow0",
+        "overflow1",
         "ulpi_sw_oe_n",
         "ulpi_sw_s",
         "itipacker0",
@@ -327,6 +328,8 @@ class USBSnifferSoC(SoCSDRAM):
         self.submodules.dramfifo = LiteDRAMFIFO([("data", 32)], depth, 0, self.sdram.crossbar,
                                             preserve_first_last=False)
 
+        self.submodules.hugefifo = stream.SyncFIFO([("data", 32)], 512)
+
         # debug wishbone
         self.add_cpu(UARTWishboneBridge(platform.request("serial"), clk_freq, baudrate=3e6))
         self.add_wb_master(self.cpu.wishbone)
@@ -358,20 +361,25 @@ class USBSnifferSoC(SoCSDRAM):
             self.submodules.ulpi_phy0 = ULPIPHY(platform.request("ulpi", 0), cd="ulpi0")
             self.submodules.ulpi_core0 = ULPICore(self.ulpi_phy0)
 
+            # packer0
+            self.submodules.overflow0 = OverflowMeter(ulpi_cmd_description(8, 1))
+            self.submodules.itipacker0 = ITIPacker()
+            self.submodules.fifo0 = stream.SyncFIFO([("data", 40), ("len", 2)], 16)
+            self.submodules.conv40320 = Conv4032()
+
             # ulpi 1
             self.submodules.ulpi_phy1 = ULPIPHY(platform.request("ulpi", 1), cd="ulpi1")
             self.submodules.ulpi_core1 = ULPICore(self.ulpi_phy1)
 
             # usb <--> ulpi0
-            self.submodules.itipacker0 = ITIPacker()
-            self.submodules.fifo0 = stream.SyncFIFO([("data", 40), ("len", 2)], 16)
-            self.submodules.conv4032 = Conv4032()
             self.submodules.wrapcore0 = WrapCore(self.usb_core, self.usb_map["ulpi0"])
             self.comb += [
-                self.ulpi_core0.source.connect(self.itipacker0.sink),
+                self.ulpi_core0.source.connect(self.overflow0.sink),
+                self.overflow0.source.connect(self.itipacker0.sink),
                 self.itipacker0.source.connect(self.fifo0.sink),
-                self.fifo0.source.connect(self.conv4032.sink),
-                self.conv4032.source.connect(self.dramfifo.sink),
+                self.fifo0.source.connect(self.conv40320.sink),
+                self.conv40320.source.connect(self.hugefifo.sink),
+                self.hugefifo.source.connect(self.dramfifo.sink),
                 self.dramfifo.source.connect(self.wrapcore0.sink),
             ]
 
