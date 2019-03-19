@@ -8,6 +8,8 @@ from migen import *
 from litex.soc.interconnect import stream
 from litex.soc.interconnect.csr import *
 
+from gateware.clocker import TuneClocker
+
 
 # this module implements the format description from
 # https://github.com/vpelletier/ITI1480A-linux/blob/master/iti1480a/parser.py#L124
@@ -23,7 +25,6 @@ EVENT_STOP      = 0xf1
 
 
 class ITITime(Module, AutoCSR):
-    # XXX maybe run this in ULPI clock domain
     def __init__(self):
         self.enable = CSRStorage()
 
@@ -36,6 +37,8 @@ class ITITime(Module, AutoCSR):
 
         # # #
 
+        self.submodules.tune = TuneClocker(int((60/100)*2**32)) # 60 MHz clock
+
         self.sync += [
             If(~self.enable.storage,
                 self.diff.eq(0),
@@ -45,7 +48,9 @@ class ITITime(Module, AutoCSR):
                     self.diff.eq(0),
                     self.overflow.eq(0),
                 ).Else(
-                    self.diff.eq(self.diff + 1),
+                    If(self.tune.en,
+                        self.diff.eq(self.diff + 1),
+                    ),
                     If(self.diff == (2**28) - 1,
                         # max value reached, trigger overflow
                         self.overflow.eq(1),
