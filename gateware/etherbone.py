@@ -1,3 +1,4 @@
+# Copyright (C) 2018 / EnjoyDigital  / florent@enjoy-digital.fr
 from liteeth.common import *
 
 from litex.soc.interconnect import wishbone

@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# Copyright (C) 2019 / LambdaConcept  / po@lambdaconcept.com
+# Copyright (C) 2019 / LambdaConcept  / ramtin@lambdaconcept.com
 
 from migen import *
 

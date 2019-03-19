@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Copyright (C) 2018 / LambdaConcept  / po@lambdaconcept.com
 from migen import *
 from migen.fhdl.specials import Tristate
 

@@ -1,3 +1,4 @@
+# Copyright (C) 2019 / LambdaConcept  / po@lambdaconcept.com
 from migen import *
 
 from litex.soc.interconnect.csr import *
@@ -120,108 +121,6 @@ class ULPIPHYS7(Module, AutoCSR):
             rx_fifo.sink.valid.eq(odir & pads.dir)
         ]
 
-class ULPIFilter(Module, AutoCSR):
-    Reserved = 0x0001
-    OUT      = 0x0002
-    ACK      = 0x0004
-    DATA0    = 0x0008
-    PING     = 0x0010
-    SOF      = 0x0020
-    NYET     = 0x0040
-    DATA2    = 0x0080
-    SPLIT    = 0x0100
-    IN       = 0x0200
-    NAK      = 0x0400
-    DATA1    = 0x0800
-    PRE_ERR  = 0x1000
-    SETUP    = 0x2000
-    STALL    = 0x4000
-    MDATA    = 0x8000
-
-    def __init__(self):
-        self.sink = sink = stream.Endpoint(ulpi_description(8))
-        self.source = source = stream.Endpoint(ulpi_description(8))
-
-        self.mask = CSRStorage(16)
-
-        # # #
-
-        want = Signal()
-        cases = {}
-        for i in range(len(self.mask.storage)):
-            cases[i] = want.eq(~self.mask.storage[i])
-        self.comb += [
-            Case(sink.data[0:4], cases),
-        ]
-
-        keep = Signal()
-        first = Signal(reset=1)
-
-        self.comb += [
-            If((first & want) | (~first & keep),
-                sink.connect(source),
-            ).Else(
-                sink.ready.eq(1), # drop
-            ),
-        ]
-
-        self.sync += [
-            If(sink.valid,
-                first.eq(sink.last),
-                If(first,
-                    keep.eq(want),
-                ),
-            ),
-        ]
-
-class ULPISplitter(Module, AutoCSR):
-    def __init__(self):
-        self.sink = sink = stream.Endpoint([('data', 8), ('cmd', 1)])
-        self.source = source = stream.Endpoint([('data', 8)])
-
-        # # #
-
-        linestate = Signal(2)
-        rxevent = Signal(2)
-
-        prevdata = Signal(8)
-        prevdataset = Signal()
-
-        self.comb += [
-            linestate.eq(sink.data[0:2]),
-            rxevent.eq(sink.data[4:6]),
-            sink.ready.eq(sink.valid),
-        ]
-
-        self.sync += [
-            If(sink.valid,
-                If(~sink.cmd,
-                    If(prevdataset,
-                        source.valid.eq(1),
-                        source.data.eq(prevdata),
-                        source.last.eq(0)
-                    ),
-                    prevdata.eq(sink.data),
-                    prevdataset.eq(1)
-                ).Else(
-                    If((linestate == 0) & (rxevent == 0), # line inactive
-                        If(prevdataset,
-                            source.valid.eq(1),
-                            source.last.eq(1),
-                            source.data.eq(prevdata),
-                            prevdataset.eq(0)
-                        ).Else(
-                            source.valid.eq(0),
-                        )
-                    ).Else(
-                        source.valid.eq(0),
-                    )
-                )
-            ).Else(
-                source.valid.eq(0),
-            )
-        ]
-
 class ULPIEncoder(Module, AutoCSR):
     def __init__(self):
         self.sink = sink = stream.Endpoint(ulpi_description(8))
@@ -251,10 +150,8 @@ class ULPIEncoder(Module, AutoCSR):
 
 class ULPICore(Module, AutoCSR):
     def __init__(self, phy):
-        # self.submodules.splitter = ULPISplitter()
         self.submodules.encoder = ULPIEncoder()
         self.sink = self.encoder.sink
-        # self.source = self.splitter.source
         self.source = source = stream.Endpoint([('data', 8), ('cmd', 1)])
 
         self.reg_adr = CSRStorage(6)
@@ -278,7 +175,6 @@ class ULPICore(Module, AutoCSR):
             ).Elif(self.reg_read.re,
                 NextState("READ_FLUSH")
             ).Else(
-                # phy.source.connect(self.splitter.sink),
                 If(self.enable_source.storage,
                     phy.source.connect(source),
                 ).Else(

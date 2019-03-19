@@ -1,3 +1,4 @@
+# Copyright (C) 2018 / EnjoyDigital  / florent@enjoy-digital.fr
 from migen import *
 
 from litex.soc.interconnect.csr import *

@@ -1,3 +1,4 @@
+# Copyright (C) 2018 / EnjoyDigital  / florent@enjoy-digital.fr
 from collections import OrderedDict
 
 from migen.genlib.misc import WaitTimer

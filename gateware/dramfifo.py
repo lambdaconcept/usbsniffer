@@ -1,3 +1,5 @@
+# Copyright (C) 2019 / LambdaConcept  / po@lambdaconcept.com
+# Copyright (C) 2018 / EnjoyDigital  / florent@enjoy-digital.fr
 from litex.gen import *
 
 from litex.soc.interconnect import stream

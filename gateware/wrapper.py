@@ -1,3 +1,4 @@
+# Copyright (C) 2019 / LambdaConcept  / po@lambdaconcept.com
 from migen import *
 from migen.genlib.misc import WaitTimer
 
