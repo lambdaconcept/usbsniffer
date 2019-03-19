@@ -16,12 +16,28 @@ class USBMux():
         self.f.write(data)
 
     def recv(self, streamid):
-        data = self.f.read(12)
-        magic, streamid, length = struct.unpack("III", data)
-        print("Header:", hex(magic), streamid, length)
+        magic = 0
+        while magic != self.magic:
+            data = self.f.read(4)
+            magic, = struct.unpack("I", data)
+            # print("Magic:", data.hex())
+            try:
+                assert(magic == self.magic)
+            except AssertionError as e:
+                print("ASSERT ERROR!")
+                for k in range(64):
+                    data = self.f.read(4)
+                    print(data.hex())
+                raise e
+        data = self.f.read(8)
+        sid, length = struct.unpack("II", data)
+        # print("Header:", hex(magic), sid, length)
         # print(data.hex())
         packet = self.f.read(length)
-        # print(packet.hex())
+        # print("Packet:", packet.hex())
+        if sid != streamid:
+            print("Not our stream, drop packet")
+            return None
         return packet
 
 class Etherbone(CSRBuilder):
@@ -51,7 +67,9 @@ class Etherbone(CSRBuilder):
             packet.encode()
 
             self.io.send(self.streamid, bytes(packet))
-            data = self.io.recv(self.streamid)
+            data = None
+            while data is None:
+                data = self.io.recv(self.streamid)
 
             packet = EtherbonePacket(data)
             packet.decode()
