@@ -24,9 +24,8 @@ from litedram.phy import a7ddrphy
 from gateware.usb import USBCore
 from gateware.etherbone import Etherbone
 from gateware.ft601 import FT601Sync, phy_description
-from gateware.ulpi import ULPIPHY, ULPICore, ULPIFilter, ulpi_cmd_description
-from gateware.packer import LTCore, LTPacker
-from gateware.iti import ITIPacker, Conv4032
+from gateware.ulpi import ULPIPHY, ULPICore, ulpi_cmd_description
+from gateware.iti import ITICore, Conv4032
 from gateware.wrapper import WrapCore
 from gateware.dramfifo import LiteDRAMFIFO
 from gateware.spi import SPIMaster
@@ -273,6 +272,16 @@ class BlinkerRGB(Module, AutoCSR):
         ]
 
 
+class ResetManager(Module, AutoCSR):
+    def __init__(self, modules):
+        self.reset = CSR()
+
+        # # #
+
+        for m in modules:
+            self.sync += m.reset.eq(self.reset.re)
+
+
 class USBSnifferSoC(SoCSDRAM):
     csr_peripherals = [
         "flash",
@@ -285,10 +294,11 @@ class USBSnifferSoC(SoCSDRAM):
         "overflow1",
         "ulpi_sw_oe_n",
         "ulpi_sw_s",
-        "itipacker0",
-        "itipacker1",
+        "iticore0",
+        "iticore1",
         "blinker0",
         "blinker1",
+        "rst_manager",
         "analyzer",
     ]
     csr_map_update(SoCSDRAM.csr_map, csr_peripherals)
@@ -325,10 +335,10 @@ class USBSnifferSoC(SoCSDRAM):
 
         # sdram fifo
         depth = 32 * 1024 * 1024
-        self.submodules.dramfifo = LiteDRAMFIFO([("data", 32)], depth, 0, self.sdram.crossbar,
-                                            preserve_first_last=False)
+        self.submodules.dramfifo = ResetInserter()(LiteDRAMFIFO([("data", 32)], depth, 0,
+                                            self.sdram.crossbar, preserve_first_last=False))
 
-        self.submodules.hugefifo = stream.SyncFIFO([("data", 32)], 512)
+        self.submodules.hugefifo = ResetInserter()(stream.SyncFIFO([("data", 32)], 512))
 
         # debug wishbone
         self.add_cpu(UARTWishboneBridge(platform.request("serial"), clk_freq, baudrate=3e6))
@@ -363,8 +373,8 @@ class USBSnifferSoC(SoCSDRAM):
 
             # packer0
             self.submodules.overflow0 = OverflowMeter(ulpi_cmd_description(8, 1))
-            self.submodules.itipacker0 = ITIPacker()
-            self.submodules.fifo0 = stream.SyncFIFO([("data", 40), ("len", 2)], 16)
+            self.submodules.iticore0 = ITICore()
+            self.submodules.fifo0 = ResetInserter()(stream.SyncFIFO([("data", 40), ("len", 2)], 16))
             self.submodules.conv40320 = Conv4032()
 
             # ulpi 1
@@ -375,13 +385,18 @@ class USBSnifferSoC(SoCSDRAM):
             self.submodules.wrapcore0 = WrapCore(self.usb_core, self.usb_map["ulpi0"])
             self.comb += [
                 self.ulpi_core0.source.connect(self.overflow0.sink),
-                self.overflow0.source.connect(self.itipacker0.sink),
-                self.itipacker0.source.connect(self.fifo0.sink),
+                self.overflow0.source.connect(self.iticore0.sink),
+                self.iticore0.source.connect(self.fifo0.sink),
                 self.fifo0.source.connect(self.conv40320.sink),
                 self.conv40320.source.connect(self.hugefifo.sink),
                 self.hugefifo.source.connect(self.dramfifo.sink),
                 self.dramfifo.source.connect(self.wrapcore0.sink),
             ]
+
+            # reset manager
+            self.rst_manager = ResetManager([self.iticore0, self.fifo0,
+                                             self.conv40320, self.hugefifo,
+                                             self.dramfifo, self.wrapcore0])
 
             # leds
             led0 = platform.request("rgb_led", 0)
@@ -405,9 +420,9 @@ class USBSnifferSoC(SoCSDRAM):
                 self.ulpi_core0.source.valid,
                 self.ulpi_core0.source.ready,
                 self.ulpi_core0.source.data,
-                self.itipacker0.source.valid,
-                self.itipacker0.source.ready,
-                self.itipacker0.source.data,
+                self.iticore0.source.valid,
+                self.iticore0.source.ready,
+                self.iticore0.source.data,
                 self.fifo.source.valid,
                 self.fifo.source.ready,
                 self.fifo.source.data,

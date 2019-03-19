@@ -14,6 +14,7 @@ def wrap_description(dw):
     return stream.EndpointDescription(payload_layout)
 
 
+@ResetInserter()
 class WrapCore(Module):
     def __init__(self, usb_core, identifier):
         self.submodules.sender = sender = WrapSender(identifier)

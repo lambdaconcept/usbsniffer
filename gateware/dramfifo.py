@@ -306,7 +306,6 @@ class _FLUnpack(Module):
             sink.ready.eq(source.ready),
         ]
 
-
 class LiteDRAMFIFO(Module):
     def __init__(self, layout, depth, base, crossbar,
         read_threshold=None, write_threshold=None,

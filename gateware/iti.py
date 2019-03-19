@@ -25,7 +25,7 @@ EVENT_STOP      = 0xf1
 class ITITime(Module, AutoCSR):
     # XXX maybe run this in ULPI clock domain
     def __init__(self):
-        self.reset = CSR()
+        self.enable = CSRStorage()
 
         self.diff = Signal(28)      # output, time increment
         self.len = Signal(2)        # output, time increment length
@@ -37,7 +37,7 @@ class ITITime(Module, AutoCSR):
         # # #
 
         self.sync += [
-            If(self.reset.re,
+            If(~self.enable.storage,
                 self.diff.eq(0),
                 self.overflow.eq(0),
             ).Else(
@@ -205,6 +205,74 @@ class ITIPacker(Module, AutoCSR):
         ]
 
 
+class ITIPattern(Module):
+    def __init__(self, pattern, length, repeat=1):
+        """ This module generates a start pattern.
+        It is used by the software to realign its decoding in case the FIFO
+        is flushed or corrupted after capture start / stop.
+        """
+        self.source = source = stream.Endpoint([("data", 40), ("len", 2)])
+
+        self.start = Signal()
+        self.done = Signal(reset=1)
+
+        # # #
+
+        assert((length >= 2) and (length <= 5))
+
+        count = Signal(max=repeat+1)
+
+        fsm = FSM()
+        self.submodules.fsm = fsm
+
+        fsm.act("IDLE",
+            self.done.eq(1),
+            If(self.start,
+                NextValue(count, repeat),
+                NextState("PATTERN"),
+            ),
+        )
+
+        fsm.act("PATTERN",
+            source.data.eq(pattern),
+            source.len.eq(length - 2),
+            source.valid.eq(1),
+            If(source.ready,
+                NextValue(count, count - 1),
+                If(count == 1,
+                    NextState("IDLE"),
+                ),
+            ),
+        )
+
+
+@ResetInserter()
+class ITICore(Module, AutoCSR):
+    def __init__(self):
+        self.sink = sink = stream.Endpoint([('data', 8), ('cmd', 1)])
+        self.source = source = stream.Endpoint([("data", 40), ("len", 2)])
+
+        self.start_pattern = CSR()
+
+        # # #
+
+        self.submodules.pattern = ITIPattern(0xe00050, 3, 4)
+        self.submodules.packer = ITIPacker()
+
+        self.comb += [
+            self.pattern.start.eq(self.start_pattern.re),
+
+            # Mux sources with priority to pattern generator
+            If(self.pattern.source.valid,
+                self.pattern.source.connect(source),
+            ).Else(
+                self.sink.connect(self.packer.sink),
+                self.packer.source.connect(source),
+            )
+        ]
+
+
+@ResetInserter()
 class Conv4032(Module):
     def __init__(self):
         self.sink = sink = stream.Endpoint([('data', 40), ('len', 2)])
