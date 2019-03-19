@@ -19,5 +19,5 @@ python3 usbsniffer.py
 ### Program FPGA Flash
 
 ```
-python3 flash.py
+openocd -f openocd/openocd.cfg
 ```
