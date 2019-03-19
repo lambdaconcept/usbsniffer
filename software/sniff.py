@@ -122,7 +122,7 @@ if __name__ == '__main__':
 
     usbmux = USBMux(sys.argv[1])
     eb = Etherbone(usbmux, STREAMID_WISHBONE,
-                          csr_csv="test/csr.csv", csr_data_width=8, debug=False)
+                          csr_csv="test/csr.csv")
 
     sdram_configure(eb)
 
