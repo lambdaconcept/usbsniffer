@@ -12,12 +12,12 @@ from litex.soc.interconnect.csr import *
 from litex.soc.integration.soc_core import *
 from litex.soc.integration.soc_sdram import *
 from litex.soc.integration.builder import *
-from litex.soc.integration.cpu_interface import get_csr_header
+from litex.soc.integration.export import get_csr_header
 from litex.soc.interconnect import stream
 from litex.soc.cores.uart import UARTWishboneBridge, RS232PHY
 from litex.soc.cores.gpio import GPIOOut
 
-from litedram import sdram_init
+from litedram.init import get_sdram_phy_c_header
 from litedram.modules import MT41K256M16
 from litedram.phy import a7ddrphy
 
@@ -283,25 +283,29 @@ class ResetManager(Module, AutoCSR):
 
 
 class USBSnifferSoC(SoCSDRAM):
-    csr_peripherals = [
-        "flash",
-        "ddrphy",
-        "ulpi_phy0",
-        "ulpi_phy1",
-        "ulpi_core0",
-        "ulpi_core1",
-        "overflow0",
-        "overflow1",
-        "ulpi_sw_oe_n",
-        "ulpi_sw_s",
-        "iticore0",
-        "iticore1",
-        "blinker0",
-        "blinker1",
-        "rst_manager",
-        "analyzer",
-    ]
-    csr_map_update(SoCSDRAM.csr_map, csr_peripherals)
+    csr_map = {
+        "ctrl":          0,
+        "identifier_mem": 1,
+        "sdram":         8,
+        "l2_cache":      9,
+        "flash" :       10,
+        "ddrphy":       11,
+        "ulpi_phy0":    12,
+        "ulpi_phy1":    13,
+        "ulpi_core0":   14,
+        "ulpi_core1":   15,
+        "overflow0":    16,
+        "overflow1":    17,
+        "ulpi_sw_oe_n": 18,
+        "ulpi_sw_s":    19,
+        "iticore0":     20,
+        "iticore1":     21,
+        "blinker0":     22,
+        "blinker1":     23,
+        "rst_manager":  24,
+        "analyzer":     25,
+    }
+    csr_map.update(SoCSDRAM.csr_map)
 
     usb_map = {
         "wishbone": 0,
@@ -341,8 +345,8 @@ class USBSnifferSoC(SoCSDRAM):
         self.submodules.hugefifo = ResetInserter()(stream.SyncFIFO([("data", 32)], 512))
 
         # debug wishbone
-        self.add_cpu(UARTWishboneBridge(platform.request("serial"), clk_freq, baudrate=3e6))
-        self.add_wb_master(self.cpu.wishbone)
+        self.submodules.bridge = UARTWishboneBridge(platform.request("serial"), clk_freq, baudrate=3e6)
+        self.add_wb_master(self.bridge.wishbone)
 
         # usb phy
         usb_pads = platform.request("usb_fifo")
@@ -437,12 +441,12 @@ class USBSnifferSoC(SoCSDRAM):
             self.analyzer.export_csv(vns, "test/analyzer.csv")
 
     def generate_software_header(self):
-        csr_header = get_csr_header(self.get_csr_regions(),
-                                    self.get_constants(),
+        csr_header = get_csr_header(self.csr_regions,
+                                    self.constants,
                                     with_access_functions=True)
         tools.write_to_file(os.path.join("software/generated/csr.h"), csr_header)
 
-        phy_header = sdram_init.get_sdram_phy_c_header(
+        phy_header = get_sdram_phy_c_header(
                          self.sdram.controller.settings.phy,
                          self.sdram.controller.settings.timing)
         tools.write_to_file(os.path.join("software/generated/sdram_phy.h"), phy_header)
@@ -452,7 +456,7 @@ def main():
     platform = Platform()
     soc = USBSnifferSoC(platform, with_loopback=False, with_analyzer=False)
     builder = Builder(soc, output_dir="build", csr_csv="test/csr.csv")
-    vns = builder.build()
+    vns = builder.build(build_name="top")
     soc.do_exit(vns)
     soc.generate_software_header()
 
