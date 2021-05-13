@@ -1,7 +1,7 @@
 import struct
 
-from litex.soc.tools.remote.etherbone import *
-from litex.soc.tools.remote.csr_builder import CSRBuilder
+from litex.tools.remote.comm_pcie import CSRBuilder
+from litex.tools.remote.etherbone import EtherbonePacket, EtherboneRecord, EtherboneReads, EtherboneWrites
 
 class USBMux():
     def __init__(self, path):
