@@ -10,20 +10,18 @@ from litex.soc.interconnect.csr import *
 from litex.soc.integration.soc_core import *
 from litex.soc.integration.soc_sdram import *
 from litex.soc.integration.builder import *
-from litex.soc.integration.cpu_interface import get_csr_header
+from litex.soc.integration.export import get_csr_header
 from litex.soc.interconnect import stream
 from litex.soc.cores.uart import UARTWishboneBridge, RS232PHY
 from litex.soc.cores.gpio import GPIOOut
 
-from litedram import sdram_init
 from litedram.modules import MT41K256M16
 from litedram.phy import a7ddrphy
 
 from gateware.usb import USBCore
 from gateware.etherbone import Etherbone
 from gateware.ft601 import FT601Sync, phy_description
-from gateware.ulpi import ULPIPHY, ULPICore, ULPIFilter
-from gateware.packer import LTCore, LTPacker
+from gateware.ulpi import ULPIPHY, ULPICore
 from gateware.dramfifo import LiteDRAMFIFO
 
 from litescope import LiteScopeAnalyzer
@@ -225,7 +223,6 @@ class BlinkerRGB(Module):
 class USBSnifferSoC(SoCCore):
     csr_peripherals = [
     ]
-    csr_map_update(SoCCore.csr_map, csr_peripherals)
 
     def __init__(self, platform):
         clk_freq = int(100e6)

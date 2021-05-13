@@ -12,12 +12,12 @@ from litex.soc.interconnect.csr import *
 from litex.soc.integration.soc_core import *
 from litex.soc.integration.soc_sdram import *
 from litex.soc.integration.builder import *
-from litex.soc.integration.cpu_interface import get_csr_header
+from litex.soc.integration.export import get_csr_header
 from litex.soc.interconnect import stream
 from litex.soc.cores.uart import UARTWishboneBridge, RS232PHY
 from litex.soc.cores.gpio import GPIOOut
 
-from litedram import sdram_init
+from litedram import init
 from litedram.modules import MT41K256M16
 from litedram.phy import a7ddrphy
 
@@ -301,7 +301,6 @@ class USBSnifferSoC(SoCSDRAM):
         "rst_manager",
         "analyzer",
     ]
-    csr_map_update(SoCSDRAM.csr_map, csr_peripherals)
 
     usb_map = {
         "wishbone": 0,
@@ -341,8 +340,8 @@ class USBSnifferSoC(SoCSDRAM):
         self.submodules.hugefifo = ResetInserter()(stream.SyncFIFO([("data", 32)], 512))
 
         # debug wishbone
-        self.add_cpu(UARTWishboneBridge(platform.request("serial"), clk_freq, baudrate=3e6))
-        self.add_wb_master(self.cpu.wishbone)
+        self.submodules.uart_bridge = UARTWishboneBridge(platform.request("serial"), clk_freq, baudrate=3e6)
+        self.add_wb_master(self.uart_bridge.wishbone)
 
         # usb phy
         usb_pads = platform.request("usb_fifo")
@@ -442,7 +441,7 @@ class USBSnifferSoC(SoCSDRAM):
                                     with_access_functions=True)
         tools.write_to_file(os.path.join("software/generated/csr.h"), csr_header)
 
-        phy_header = sdram_init.get_sdram_phy_c_header(
+        phy_header = init.get_sdram_phy_c_header(
                          self.sdram.controller.settings.phy,
                          self.sdram.controller.settings.timing)
         tools.write_to_file(os.path.join("software/generated/sdram_phy.h"), phy_header)

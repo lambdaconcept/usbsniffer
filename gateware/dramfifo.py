@@ -4,7 +4,6 @@ from litex.gen import *
 
 from litex.soc.interconnect import stream
 
-from litedram.frontend import dma
 from litedram.common import LiteDRAMNativePort
 
 
